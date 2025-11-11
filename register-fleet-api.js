@@ -6,9 +6,11 @@ const CLIENT_ID = process.env.TESLA_CLIENT_ID || '98115f27-6ac6-4a11-9bc8-c256cc
 const CLIENT_SECRET = process.env.TESLA_CLIENT_SECRET || 'ta-secret.@vN5q2MiuF+S';
 const DOMAIN = 'my-pwa-apps.github.io';
 const REGION = 'eu'; // Europe, Middle East, Africa
+const FLEET_API_BASE = `https://fleet-api.prd.${REGION}.vn.cloud.tesla.com`;
 
 console.log('🔐 Tesla Fleet API Registration\n');
-console.log('⚠️  IMPORTANT: Fleet API registration requires you to authenticate with your Tesla account first.\n');
+console.log(`Region: ${REGION.toUpperCase()}`);
+console.log(`Fleet API: ${FLEET_API_BASE}\n`);
 console.log('📋 Manual Registration Steps:\n');
 console.log('1. Verify your public key is accessible at:');
 console.log(`   https://${DOMAIN}/Tesla/.well-known/appspecific/com.tesla.3p.public-key.pem\n`);
@@ -53,15 +55,68 @@ async function registerFleetAPI() {
         return;
     }
     
-    console.log('📝 Next Steps:\n');
-    console.log('Since client_credentials grant is not working, you need to:');
-    console.log('1. Try connecting through your web app (OAuth authorization code flow)');
-    console.log('2. Or register through Tesla Developer Portal directly');
-    console.log('3. Tesla may auto-register your app on first successful OAuth login\n');
-    console.log('� Try accessing your app at:');
-    console.log(`   https://${DOMAIN}/Tesla/\n`);
-    console.log('Click "Connect Tesla Account" and complete the OAuth flow.');
-    console.log('This may automatically register your app with Fleet API.\n');
+    console.log('📝 Attempting to get partner token and register...\n');
+    
+    try {
+        // Step 1: Get partner token using the correct endpoint
+        console.log('Step 1: Getting partner authentication token...');
+        const tokenResponse = await fetch('https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams({
+                grant_type: 'client_credentials',
+                client_id: CLIENT_ID,
+                client_secret: CLIENT_SECRET,
+                scope: 'openid vehicle_device_data vehicle_cmds vehicle_charging_cmds',
+                audience: FLEET_API_BASE
+            })
+        });
+        
+        if (!tokenResponse.ok) {
+            const error = await tokenResponse.json();
+            console.error('❌ Failed to get token:', JSON.stringify(error, null, 2));
+            console.log('\n💡 If this fails, it may mean:');
+            console.log('1. Your app needs approval from Tesla');
+            console.log('2. Fleet API registration must be done through Developer Portal');
+            console.log('3. Your account may not have access to Fleet API yet\n');
+            return;
+        }
+        
+        const { access_token } = await tokenResponse.json();
+        console.log('✅ Got partner token!\n');
+        
+        // Step 2: Register with Fleet API
+        console.log('Step 2: Registering domain with Fleet API...');
+        const registerResponse = await fetch(`${FLEET_API_BASE}/api/1/partner_accounts`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${access_token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                domain: DOMAIN
+            })
+        });
+        
+        if (!registerResponse.ok) {
+            const error = await registerResponse.json();
+            console.error('❌ Registration failed:', JSON.stringify(error, null, 2));
+            console.log('\n📝 Make sure your public key is accessible at:');
+            console.log(`   https://${DOMAIN}/Tesla/.well-known/appspecific/com.tesla.3p.public-key.pem\n`);
+            return;
+        }
+        
+        const result = await registerResponse.json();
+        console.log('✅ Registration successful!');
+        console.log('\n📋 Registration details:', JSON.stringify(result, null, 2));
+        console.log('\n🎉 Your app is now registered with Tesla Fleet API!');
+        console.log('You can now use OAuth to get third-party tokens.\n');
+        
+    } catch (error) {
+        console.error('❌ Error:', error.message);
+    }
 }
 
 registerFleetAPI().catch(console.error);
