@@ -25,6 +25,9 @@ app.use(express.json());
 // Serve Tesla Fleet API public key
 app.use('/.well-known', express.static(path.join(__dirname, '.well-known')));
 
+// Serve callback page
+app.use('/callback.html', express.static(path.join(__dirname, 'public')));
+
 const TESLA_CONFIG = {
     clientId: process.env.TESLA_CLIENT_ID,
     clientSecret: process.env.TESLA_CLIENT_SECRET,

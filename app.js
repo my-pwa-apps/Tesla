@@ -10,7 +10,8 @@ const TESLA_OAUTH_CONFIG = {
     // It's stored securely in backend/.env
     
     // Redirect URI - must match exactly what's registered in Tesla Developer Portal
-    redirectUri: window.location.origin + (window.location.pathname.includes('/Tesla/') ? '/Tesla' : '') + '/callback.html',
+    // Use Vercel backend callback since Fleet API is registered there
+    redirectUri: 'https://bart-gilt-delta.vercel.app/callback.html',
     authUrl: 'https://auth.tesla.com/oauth2/v3/authorize',
     
     // Use backend proxy for token exchange (avoids CORS and keeps secret secure)
@@ -856,8 +857,33 @@ function setupSettings() {
     });
 }
 
+// Check for OAuth callback from sessionStorage (set by callback page)
+async function checkOAuthCallback() {
+    const code = sessionStorage.getItem('tesla_oauth_code');
+    const state = sessionStorage.getItem('tesla_oauth_state');
+    
+    if (code && state) {
+        // Clear from sessionStorage
+        sessionStorage.removeItem('tesla_oauth_code');
+        sessionStorage.removeItem('tesla_oauth_state');
+        
+        // Retrieve stored code verifier
+        const codeVerifier = sessionStorage.getItem('tesla_code_verifier');
+        const storedState = sessionStorage.getItem('tesla_oauth_state_key');
+        
+        if (state !== storedState) {
+            console.error('State mismatch - possible CSRF attack');
+            return;
+        }
+        
+        // Exchange code for token
+        await exchangeCodeForToken(code, codeVerifier);
+    }
+}
+
 // Initialize OAuth config and tiles
-initializeOAuthConfig().then(() => {
+initializeOAuthConfig().then(async () => {
+    await checkOAuthCallback();
     loadWeather();
     loadTeslaBattery();
     loadTeslaClimate();
