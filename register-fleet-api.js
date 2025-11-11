@@ -3,8 +3,11 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const CLIENT_ID = process.env.TESLA_CLIENT_ID || '98115f27-6ac6-4a11-9bc8-c256cce5f8cc';
-const CLIENT_SECRET = process.env.TESLA_CLIENT_SECRET || 'ta-secret.@vN5q2MiuF+S';
+const CLIENT_SECRET = process.env.TESLA_CLIENT_SECRET || 'ta-secret.@vN5q2MiuF+S$yZR';
+// Tesla expects the domain for partner registration, public key must be at domain/.well-known/
 const DOMAIN = 'my-pwa-apps.github.io';
+// But public key is actually at my-pwa-apps.github.io/Tesla/.well-known/
+const PUBLIC_KEY_URL = 'https://my-pwa-apps.github.io/Tesla/.well-known/appspecific/com.tesla.3p.public-key.pem';
 const REGION = 'eu'; // Europe, Middle East, Africa
 const FLEET_API_BASE = `https://fleet-api.prd.${REGION}.vn.cloud.tesla.com`;
 
@@ -28,7 +31,7 @@ console.log('   The first successful OAuth login may trigger automatic Fleet API
 async function checkPublicKey() {
     console.log('✅ Checking if public key is accessible...\n');
     try {
-        const response = await fetch(`https://${DOMAIN}/Tesla/.well-known/appspecific/com.tesla.3p.public-key.pem`);
+        const response = await fetch(PUBLIC_KEY_URL);
         if (response.ok) {
             console.log('✅ Public key is accessible!');
             const content = await response.text();
