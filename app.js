@@ -18,7 +18,7 @@ const TESLA_OAUTH_CONFIG = {
     // Backend URL - Vercel deployment
     backendUrl: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:3000/api'
-        : 'https://tesla-gilt-delta.vercel.app/api',
+        : 'https://bart-gilt-delta.vercel.app/api',
     
     // Direct API URLs (not used when useBackend is true)
     tokenUrl: 'https://auth.tesla.com/oauth2/v3/token',

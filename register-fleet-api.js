@@ -5,9 +5,8 @@ const crypto = require('crypto');
 const CLIENT_ID = process.env.TESLA_CLIENT_ID || '98115f27-6ac6-4a11-9bc8-c256cce5f8cc';
 const CLIENT_SECRET = process.env.TESLA_CLIENT_SECRET || 'ta-secret.@vN5q2MiuF+S$yZR';
 // Tesla expects the domain for partner registration, public key must be at domain/.well-known/
-const DOMAIN = 'tesla-gilt-delta.vercel.app';
-// But public key is actually at my-pwa-apps.github.io/Tesla/.well-known/
-const PUBLIC_KEY_URL = 'https://my-pwa-apps.github.io/Tesla/.well-known/appspecific/com.tesla.3p.public-key.pem';
+const DOMAIN = 'bart-gilt-delta.vercel.app';
+const PUBLIC_KEY_URL = `https://${DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem`;
 const REGION = 'eu'; // Europe, Middle East, Africa
 const FLEET_API_BASE = `https://fleet-api.prd.${REGION}.vn.cloud.tesla.com`;
 
@@ -16,7 +15,7 @@ console.log(`Region: ${REGION.toUpperCase()}`);
 console.log(`Fleet API: ${FLEET_API_BASE}\n`);
 console.log('📋 Manual Registration Steps:\n');
 console.log('1. Verify your public key is accessible at:');
-console.log(`   https://${DOMAIN}/Tesla/.well-known/appspecific/com.tesla.3p.public-key.pem\n`);
+console.log(`   https://${DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem\n`);
 console.log('2. Get a partner authentication token by logging in:');
 console.log('   a. Go to: https://developer.tesla.com/');
 console.log('   b. Sign in with your Tesla account');
@@ -107,7 +106,7 @@ async function registerFleetAPI() {
             const error = await registerResponse.json();
             console.error('❌ Registration failed:', JSON.stringify(error, null, 2));
             console.log('\n📝 Make sure your public key is accessible at:');
-            console.log(`   https://${DOMAIN}/Tesla/.well-known/appspecific/com.tesla.3p.public-key.pem\n`);
+            console.log(`   https://${DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem\n`);
             return;
         }
         
