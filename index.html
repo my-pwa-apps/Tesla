@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tesla Dashboard</title>
+    
+    <!-- Tesla-like Font (Gotham alternative) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
     <link rel="stylesheet" href="styles.css">
     
     <!-- Firebase SDK -->
@@ -15,8 +21,16 @@
 <body>
     <div class="container">
         <header>
-            <h1>Tesla Dashboard</h1>
-            <div class="time-display" id="currentTime"></div>
+            <div class="header-content">
+                <div class="tesla-logo">
+                    <svg viewBox="0 0 342 35" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M0 .1a9.7 9.7 0 0 0 7 7h11l.5.1v27.6h6.8V7.3L26 7h11a9.8 9.8 0 0 0 7-7H0zm238.6 0h-6.8v34.8H263a9.7 9.7 0 0 0 6-6.8h-30.3V0zm-52.3 6.8c3.6-1 6.6-3.8 7.4-6.9l-38.1.1v20.6h31.1v7.2h-24.4a13.6 13.6 0 0 0-8.7 7h39.9v-21h-31.2v-7h24zm116.2 28h6.7v-14h24.6v14h6.7v-21h-38zM85.3 7h26a9.6 9.6 0 0 0 7.1-7H78.3a9.6 9.6 0 0 0 7 7zm0 13.8h26a9.6 9.6 0 0 0 7.1-7H78.3a9.6 9.6 0 0 0 7 7zm0 14.1h26a9.6 9.6 0 0 0 7.1-7H78.3a9.6 9.6 0 0 0 7 7zM308.5 7h26a9.6 9.6 0 0 0 7-7h-40a9.6 9.6 0 0 0 7 7z" fill="currentColor"/>
+                    </svg>
+                </div>
+                <div class="header-right">
+                    <div class="time-display" id="currentTime"></div>
+                </div>
+            </div>
         </header>
 
         <div class="dashboard-grid">
@@ -121,15 +135,27 @@
                 </div>
             </div>
 
-            <!-- News Tile -->
-            <div class="tile news-tile" id="newsTile">
+            <!-- Navigation Tile - Large -->
+            <div class="tile navigation-tile large-tile" id="navigationTile">
                 <div class="tile-header">
-                    <span class="tile-icon">📰</span>
-                    <h2>Top News</h2>
+                    <span class="tile-icon">�️</span>
+                    <h2>Navigation</h2>
                 </div>
                 <div class="tile-content">
-                    <div class="loading">Loading...</div>
-                    <div class="news-list hidden" id="newsList"></div>
+                    <div class="nav-search">
+                        <input type="text" id="navSearch" placeholder="Enter destination..." class="nav-input">
+                        <button class="action-btn" id="navSearchBtn">Search</button>
+                    </div>
+                    <div class="nav-results hidden" id="navResults"></div>
+                    <div class="quick-destinations">
+                        <h3>Quick Destinations</h3>
+                        <div class="destination-buttons">
+                            <button class="dest-btn" data-dest="home">🏠 Home</button>
+                            <button class="dest-btn" data-dest="work">💼 Work</button>
+                            <button class="dest-btn" data-dest="supercharger">⚡ Nearest Supercharger</button>
+                            <button class="dest-btn" data-dest="service">🔧 Service Center</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -145,32 +171,54 @@
                 </div>
             </div>
 
-            <!-- Quote of the Day Tile -->
-            <div class="tile quote-tile" id="quoteTile">
+            <!-- Trip Computer Tile -->
+            <div class="tile trip-tile" id="tripTile">
                 <div class="tile-header">
-                    <span class="tile-icon">💭</span>
-                    <h2>Inspiration</h2>
+                    <span class="tile-icon">�️</span>
+                    <h2>Trip Computer</h2>
                 </div>
                 <div class="tile-content">
-                    <div class="loading">Loading...</div>
-                    <div class="quote-content hidden">
-                        <p class="quote-text" id="quoteText"></p>
-                        <p class="quote-author" id="quoteAuthor"></p>
+                    <div class="trip-stats">
+                        <div class="trip-stat">
+                            <span class="trip-label">Distance Today</span>
+                            <span class="trip-value" id="distanceToday">0 mi</span>
+                        </div>
+                        <div class="trip-stat">
+                            <span class="trip-label">Avg Efficiency</span>
+                            <span class="trip-value" id="avgEfficiency">245 Wh/mi</span>
+                        </div>
+                        <div class="trip-stat">
+                            <span class="trip-label">Energy Used</span>
+                            <span class="trip-value" id="energyUsed">0 kWh</span>
+                        </div>
+                        <button class="action-btn small" id="resetTripBtn">Reset Trip</button>
                     </div>
                 </div>
             </div>
 
-            <!-- NASA Photo Tile -->
-            <div class="tile nasa-tile" id="nasaTile">
+            <!-- Speed & Range Tile -->
+            <div class="tile speed-tile" id="speedTile">
                 <div class="tile-header">
-                    <span class="tile-icon">🚀</span>
-                    <h2>NASA Photo</h2>
+                    <span class="tile-icon">⚡</span>
+                    <h2>Performance</h2>
                 </div>
                 <div class="tile-content">
-                    <div class="loading">Loading...</div>
-                    <div class="nasa-content hidden">
-                        <img id="nasaImage" alt="NASA Image">
-                        <p class="nasa-title" id="nasaTitle"></p>
+                    <div class="performance-stats">
+                        <div class="perf-main">
+                            <div class="speed-display" id="speedDisplay">0</div>
+                            <div class="speed-unit">mph</div>
+                        </div>
+                        <div class="range-estimate">
+                            <div class="range-label">Estimated Range</div>
+                            <div class="range-value" id="rangeEstimate">245 mi</div>
+                        </div>
+                        <div class="power-meter">
+                            <div class="power-label">Power Usage</div>
+                            <div class="power-bar">
+                                <div class="power-bar-fill" id="powerBarFill"></div>
+                            </div>
+                            <div class="power-value" id="powerValue">0 kW</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -191,45 +239,32 @@
                 </div>
             </div>
 
-            <!-- Random Facts Tile -->
-            <div class="tile facts-tile" id="factsTile">
+            <!-- Settings Tile -->
+            <div class="tile settings-tile" id="settingsTile">
                 <div class="tile-header">
-                    <span class="tile-icon">🧠</span>
-                    <h2>Did You Know?</h2>
+                    <span class="tile-icon">⚙️</span>
+                    <h2>Settings</h2>
                 </div>
                 <div class="tile-content">
-                    <div class="loading">Loading...</div>
-                    <div class="fact-content hidden">
-                        <p class="fact-text" id="factText"></p>
-                        <button class="action-btn small" id="newFactBtn">New Fact</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Currency Exchange Tile -->
-            <div class="tile currency-tile" id="currencyTile">
-                <div class="tile-header">
-                    <span class="tile-icon">💱</span>
-                    <h2>Currency</h2>
-                </div>
-                <div class="tile-content">
-                    <div class="currency-converter">
-                        <input type="number" id="amount" value="100" class="currency-input">
-                        <select id="fromCurrency" class="currency-select">
-                            <option value="USD">USD</option>
-                            <option value="EUR">EUR</option>
-                            <option value="GBP">GBP</option>
-                            <option value="JPY">JPY</option>
-                        </select>
-                        <span class="arrow">→</span>
-                        <select id="toCurrency" class="currency-select">
-                            <option value="EUR">EUR</option>
-                            <option value="USD">USD</option>
-                            <option value="GBP">GBP</option>
-                            <option value="JPY">JPY</option>
-                        </select>
-                        <button class="action-btn small" id="convertBtn">Convert</button>
-                        <div class="conversion-result hidden" id="conversionResult"></div>
+                    <div class="settings-list">
+                        <div class="setting-item">
+                            <label for="tempUnit">Temperature Unit</label>
+                            <select id="tempUnit" class="setting-select">
+                                <option value="auto">Auto (Location-based)</option>
+                                <option value="celsius">Celsius (°C)</option>
+                                <option value="fahrenheit">Fahrenheit (°F)</option>
+                            </select>
+                        </div>
+                        <div class="setting-item">
+                            <label for="distanceUnit">Distance Unit</label>
+                            <select id="distanceUnit" class="setting-select">
+                                <option value="miles">Miles</option>
+                                <option value="km">Kilometers</option>
+                            </select>
+                        </div>
+                        <div class="setting-item">
+                            <button class="action-btn small" id="refreshAllBtn">Refresh All Data</button>
+                        </div>
                     </div>
                 </div>
             </div>

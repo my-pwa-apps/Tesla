@@ -37,6 +37,40 @@ const MOCK_TESLA_DATA = {
     sentry_mode: true
 };
 
+// User preferences
+const USER_PREFERENCES = {
+    temperatureUnit: localStorage.getItem('temp_unit') || 'auto', // 'auto', 'celsius', 'fahrenheit'
+    userLocation: null
+};
+
+// Auto-detect temperature unit based on location
+function getTemperatureUnit(latitude) {
+    if (USER_PREFERENCES.temperatureUnit !== 'auto') {
+        return USER_PREFERENCES.temperatureUnit;
+    }
+    
+    // Countries that primarily use Fahrenheit (USA, some Caribbean nations)
+    // Approximate: USA is between latitudes 25°N and 49°N, longitudes -125°W and -65°W
+    // For simplicity, we'll use a more global approach
+    const fahrenheitCountries = ['US', 'BS', 'BZ', 'KY', 'PW'];
+    
+    // Default to Celsius for most of the world
+    return 'celsius';
+}
+
+function celsiusToFahrenheit(celsius) {
+    return (celsius * 9/5) + 32;
+}
+
+function formatTemperature(celsius, unit = null) {
+    const tempUnit = unit || USER_PREFERENCES.temperatureUnit;
+    
+    if (tempUnit === 'fahrenheit') {
+        return `${Math.round(celsiusToFahrenheit(celsius))}°F`;
+    }
+    return `${Math.round(celsius)}°C`;
+}
+
 // Update time display
 function updateTime() {
     const now = new Date();
@@ -64,10 +98,14 @@ async function loadWeather() {
 
         navigator.geolocation.getCurrentPosition(async (position) => {
             const { latitude, longitude } = position.coords;
+            USER_PREFERENCES.userLocation = { latitude, longitude };
             
-            // Get weather data directly without reverse geocoding to avoid CORS
+            // Auto-detect temperature unit based on location
+            const tempUnit = getTemperatureUnit(latitude);
+            
+            // Get weather data
             const weatherResponse = await fetch(
-                `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&temperature_unit=fahrenheit`
+                `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`
             );
             const weatherData = await weatherResponse.json();
             
@@ -75,7 +113,7 @@ async function loadWeather() {
             
             document.querySelector('#weatherTile .loading').classList.add('hidden');
             document.querySelector('#weatherTile .weather-info').classList.remove('hidden');
-            document.getElementById('temperature').textContent = `${Math.round(weather.temperature)}°F`;
+            document.getElementById('temperature').textContent = formatTemperature(weather.temperature, tempUnit);
             document.getElementById('condition').textContent = getWeatherDescription(weather.weathercode);
             document.getElementById('location').textContent = `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`;
         }, (error) => {
@@ -91,15 +129,19 @@ async function loadWeather() {
 async function loadDefaultWeather() {
     try {
         // Default to San Francisco
+        const lat = 37.7749;
         const weatherResponse = await fetch(
-            `https://api.open-meteo.com/v1/forecast?latitude=37.7749&longitude=-122.4194&current_weather=true&temperature_unit=fahrenheit`
+            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=-122.4194&current_weather=true`
         );
         const weatherData = await weatherResponse.json();
         const weather = weatherData.current_weather;
         
+        // Auto-detect temperature unit
+        const tempUnit = getTemperatureUnit(lat);
+        
         document.querySelector('#weatherTile .loading').classList.add('hidden');
         document.querySelector('#weatherTile .weather-info').classList.remove('hidden');
-        document.getElementById('temperature').textContent = `${Math.round(weather.temperature)}°F`;
+        document.getElementById('temperature').textContent = formatTemperature(weather.temperature, tempUnit);
         document.getElementById('condition').textContent = getWeatherDescription(weather.weathercode);
         document.getElementById('location').textContent = 'San Francisco, CA';
     } catch (error) {
@@ -138,133 +180,97 @@ function getWeatherDescription(code) {
     return weatherCodes[code] || 'Unknown';
 }
 
-// News API (NewsAPI.org - Free tier available, or use public RSS feeds)
-async function loadNews() {
+// Navigation functionality
+function setupNavigation() {
+    const searchBtn = document.getElementById('navSearchBtn');
+    const searchInput = document.getElementById('navSearch');
+    const destButtons = document.querySelectorAll('.dest-btn');
+    
+    searchBtn.addEventListener('click', () => searchDestination(searchInput.value));
+    searchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') searchDestination(searchInput.value);
+    });
+    
+    destButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const dest = btn.dataset.dest;
+            handleQuickDestination(dest);
+        });
+    });
+}
+
+async function searchDestination(query) {
+    if (!query.trim()) return;
+    
+    const resultsDiv = document.getElementById('navResults');
+    resultsDiv.innerHTML = '<div class="loading">Searching...</div>';
+    resultsDiv.classList.remove('hidden');
+    
     try {
-        // Using a public news API alternative (no key required)
-        const response = await fetch('https://api.rss2json.com/v1/api.json?rss_url=https://feeds.bbci.co.uk/news/world/rss.xml');
+        // Using Nominatim for geocoding (free, no API key)
+        const response = await fetch(
+            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`
+        );
         const data = await response.json();
         
-        document.querySelector('#newsTile .loading').classList.add('hidden');
-        const newsList = document.getElementById('newsList');
-        newsList.classList.remove('hidden');
+        if (data.length === 0) {
+            resultsDiv.innerHTML = '<p class="no-results">No results found</p>';
+            return;
+        }
         
-        data.items.slice(0, 5).forEach(article => {
-            const newsItem = document.createElement('div');
-            newsItem.className = 'news-item';
-            newsItem.innerHTML = `
-                <div class="news-title">${article.title}</div>
-                <div class="news-source">BBC News</div>
+        resultsDiv.innerHTML = '';
+        data.forEach(place => {
+            const resultItem = document.createElement('div');
+            resultItem.className = 'nav-result-item';
+            resultItem.innerHTML = `
+                <div class="result-name">${place.display_name}</div>
+                <div class="result-coords">${parseFloat(place.lat).toFixed(4)}°, ${parseFloat(place.lon).toFixed(4)}°</div>
             `;
-            newsItem.onclick = () => window.open(article.link, '_blank');
-            newsList.appendChild(newsItem);
+            resultItem.onclick = () => navigateToLocation(place.lat, place.lon, place.display_name);
+            resultsDiv.appendChild(resultItem);
         });
     } catch (error) {
-        console.error('News error:', error);
-        document.querySelector('#newsTile .loading').textContent = 'News unavailable';
+        console.error('Search error:', error);
+        resultsDiv.innerHTML = '<p class="error">Search failed</p>';
     }
 }
 
-// Quote API - Using built-in quotes as fallback for CORS issues
-async function loadQuote() {
-    const fallbackQuotes = [
-        { content: "The best way to predict the future is to invent it.", author: "Alan Kay" },
-        { content: "Innovation distinguishes between a leader and a follower.", author: "Steve Jobs" },
-        { content: "The future belongs to those who believe in the beauty of their dreams.", author: "Eleanor Roosevelt" },
-        { content: "Success is not final, failure is not fatal: it is the courage to continue that counts.", author: "Winston Churchill" },
-        { content: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
-        { content: "Don't watch the clock; do what it does. Keep going.", author: "Sam Levenson" },
-        { content: "The secret of getting ahead is getting started.", author: "Mark Twain" },
-        { content: "It always seems impossible until it's done.", author: "Nelson Mandela" },
-        { content: "Technology is best when it brings people together.", author: "Matt Mullenweg" },
-        { content: "Any sufficiently advanced technology is indistinguishable from magic.", author: "Arthur C. Clarke" }
-    ];
+function navigateToLocation(lat, lon, name) {
+    // Open in Tesla browser or Google Maps
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+    window.open(url, '_blank');
     
-    try {
-        const response = await fetch('https://api.quotable.io/quotes/random?tags=technology,inspirational,success&limit=1');
-        const data = await response.json();
-        
-        if (data && data[0]) {
-            document.querySelector('#quoteTile .loading').classList.add('hidden');
-            document.querySelector('#quoteTile .quote-content').classList.remove('hidden');
-            document.getElementById('quoteText').textContent = `"${data[0].content}"`;
-            document.getElementById('quoteAuthor').textContent = `— ${data[0].author}`;
-        } else {
-            throw new Error('No quote data');
-        }
-    } catch (error) {
-        console.log('Using fallback quote');
-        // Use fallback quotes
-        const randomQuote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
-        document.querySelector('#quoteTile .loading').classList.add('hidden');
-        document.querySelector('#quoteTile .quote-content').classList.remove('hidden');
-        document.getElementById('quoteText').textContent = `"${randomQuote.content}"`;
-        document.getElementById('quoteAuthor').textContent = `— ${randomQuote.author}`;
-    }
+    // Show confirmation
+    const resultsDiv = document.getElementById('navResults');
+    resultsDiv.innerHTML = `<div class="nav-success">Opening navigation to ${name}...</div>`;
 }
 
-// NASA API (NASA APOD - Free with DEMO_KEY)
-async function loadNASAPhoto() {
-    try {
-        const response = await fetch('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
-        const data = await response.json();
-        
-        document.querySelector('#nasaTile .loading').classList.add('hidden');
-        document.querySelector('#nasaTile .nasa-content').classList.remove('hidden');
-        
-        if (data.media_type === 'image') {
-            document.getElementById('nasaImage').src = data.url;
-            document.getElementById('nasaTitle').textContent = data.title;
-        } else {
-            document.querySelector('#nasaTile .nasa-content').innerHTML = 
-                '<p style="text-align: center; padding: 20px;">Video content - visit NASA website</p>';
-        }
-    } catch (error) {
-        console.error('NASA error:', error);
-        document.querySelector('#nasaTile .loading').textContent = 'NASA photo unavailable';
-    }
-}
-
-// Random Facts API (uselessfacts.jsph.pl - Free, no key)
-async function loadFact() {
-    try {
-        const response = await fetch('https://uselessfacts.jsph.pl/random.json?language=en');
-        const data = await response.json();
-        
-        document.querySelector('#factsTile .loading').classList.add('hidden');
-        document.querySelector('#factsTile .fact-content').classList.remove('hidden');
-        document.getElementById('factText').textContent = data.text;
-    } catch (error) {
-        console.error('Facts error:', error);
-        document.querySelector('#factsTile .loading').textContent = 'Fact unavailable';
-    }
-}
-
-document.getElementById('newFactBtn').addEventListener('click', loadFact);
-
-// Currency Converter (exchangerate-api.com - Free tier)
-async function convertCurrency() {
-    const amount = document.getElementById('amount').value;
-    const from = document.getElementById('fromCurrency').value;
-    const to = document.getElementById('toCurrency').value;
+function handleQuickDestination(dest) {
+    const messages = {
+        'home': 'Opening navigation to Home...',
+        'work': 'Opening navigation to Work...',
+        'supercharger': 'Finding nearest Supercharger...',
+        'service': 'Finding nearest Service Center...'
+    };
     
-    try {
-        const response = await fetch(`https://api.exchangerate-api.com/v4/latest/${from}`);
-        const data = await response.json();
-        
-        const rate = data.rates[to];
-        const result = (amount * rate).toFixed(2);
-        
-        const resultDiv = document.getElementById('conversionResult');
-        resultDiv.classList.remove('hidden');
-        resultDiv.textContent = `${amount} ${from} = ${result} ${to}`;
-    } catch (error) {
-        console.error('Currency error:', error);
-        alert('Currency conversion unavailable');
+    const resultsDiv = document.getElementById('navResults');
+    resultsDiv.classList.remove('hidden');
+    resultsDiv.innerHTML = `<div class="nav-success">${messages[dest]}</div>`;
+    
+    // For superchargers, open Tesla's website
+    if (dest === 'supercharger') {
+        setTimeout(() => {
+            window.open('https://www.tesla.com/findus?v=2&bounds=90,-180,-90,180&zoom=4&filters=supercharger', '_blank');
+        }, 1000);
+    }
+    
+    // For service centers
+    if (dest === 'service') {
+        setTimeout(() => {
+            window.open('https://www.tesla.com/findus?v=2&bounds=90,-180,-90,180&zoom=4&filters=service', '_blank');
+        }, 1000);
     }
 }
-
-document.getElementById('convertBtn').addEventListener('click', convertCurrency);
 
 // Charging Stations (OpenChargeMap - Free API)
 async function findChargers() {
@@ -405,8 +411,8 @@ async function loadTeslaClimate() {
         const outsideTemp = data.outside_temp || data.climate_state?.outside_temp || 0;
         const isClimateOn = data.is_climate_on || data.climate_state?.is_climate_on || false;
         
-        document.getElementById('insideTemp').textContent = `${Math.round(insideTemp * 9/5 + 32)}°F`;
-        document.getElementById('outsideTemp').textContent = `${Math.round(outsideTemp * 9/5 + 32)}°F`;
+        document.getElementById('insideTemp').textContent = formatTemperature(insideTemp);
+        document.getElementById('outsideTemp').textContent = formatTemperature(outsideTemp);
         document.getElementById('climateStatus').textContent = isClimateOn ? 'Climate On' : 'Climate Off';
         document.getElementById('climateStatus').style.color = isClimateOn ? '#4ade80' : '#888';
     } catch (error) {
@@ -569,16 +575,43 @@ For now, the app uses demo data to show functionality.
     alert(instructions);
 }
 
+// Settings functionality
+function setupSettings() {
+    const tempUnitSelect = document.getElementById('tempUnit');
+    const refreshBtn = document.getElementById('refreshAllBtn');
+    
+    // Load saved preference
+    tempUnitSelect.value = USER_PREFERENCES.temperatureUnit;
+    
+    tempUnitSelect.addEventListener('change', (e) => {
+        USER_PREFERENCES.temperatureUnit = e.target.value;
+        localStorage.setItem('temp_unit', e.target.value);
+        
+        // Refresh weather and climate to show new units
+        loadWeather();
+        loadTeslaClimate();
+    });
+    
+    refreshBtn.addEventListener('click', () => {
+        loadWeather();
+        loadTeslaBattery();
+        loadTeslaClimate();
+        loadTeslaVehicleInfo();
+        refreshBtn.textContent = 'Refreshed!';
+        setTimeout(() => {
+            refreshBtn.textContent = 'Refresh All Data';
+        }, 2000);
+    });
+}
+
 // Initialize all tiles
 loadWeather();
-loadNews();
-loadQuote();
-loadNASAPhoto();
-loadFact();
 loadTeslaBattery();
 loadTeslaClimate();
 loadTeslaVehicleInfo();
 setupTeslaAuth();
+setupNavigation();
+setupSettings();
 
 // Refresh Tesla data every 30 seconds
 setInterval(() => {

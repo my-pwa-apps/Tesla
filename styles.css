@@ -4,12 +4,25 @@
     box-sizing: border-box;
 }
 
+:root {
+    --tesla-black: #000000;
+    --tesla-dark-gray: #171717;
+    --tesla-gray: #222222;
+    --tesla-light-gray: #393c41;
+    --tesla-text: #f4f4f4;
+    --tesla-red: #cc0000;
+    --tesla-blue: #3e6ae1;
+    --tesla-white: #ffffff;
+}
+
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
-    color: #ffffff;
+    font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    background: var(--tesla-black);
+    color: var(--tesla-text);
     overflow-x: hidden;
     min-height: 100vh;
+    font-weight: 400;
+    letter-spacing: -0.2px;
 }
 
 .container {
@@ -19,28 +32,42 @@ body {
 }
 
 header {
-    text-align: center;
     margin-bottom: 30px;
-    padding: 20px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 15px;
-    backdrop-filter: blur(10px);
+    padding: 25px 20px;
+    background: var(--tesla-dark-gray);
+    border-bottom: 1px solid var(--tesla-light-gray);
 }
 
-header h1 {
-    font-size: 2.5rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, #e82127 0%, #ff6b6b 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 10px;
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.tesla-logo {
+    width: 120px;
+    height: auto;
+}
+
+.tesla-logo svg {
+    width: 100%;
+    height: auto;
+    color: var(--tesla-white);
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
 }
 
 .time-display {
-    font-size: 1.2rem;
-    color: #aaaaaa;
-    font-weight: 300;
+    font-size: 0.95rem;
+    color: var(--tesla-text);
+    font-weight: 500;
+    letter-spacing: 0.5px;
 }
 
 .dashboard-grid {
@@ -50,38 +77,50 @@ header h1 {
     margin-bottom: 20px;
 }
 
+.large-tile {
+    grid-column: span 2;
+}
+
+@media (max-width: 768px) {
+    .large-tile {
+        grid-column: span 1;
+    }
+}
+
 .tile {
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 20px;
-    padding: 20px;
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    transition: all 0.3s ease;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    background: var(--tesla-dark-gray);
+    border-radius: 8px;
+    padding: 24px;
+    border: 1px solid var(--tesla-light-gray);
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .tile:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 12px 40px 0 rgba(232, 33, 39, 0.3);
-    border-color: rgba(232, 33, 39, 0.5);
+    border-color: var(--tesla-red);
+    box-shadow: 0 4px 12px rgba(204, 0, 0, 0.15);
 }
 
 .tile-header {
     display: flex;
     align-items: center;
-    margin-bottom: 15px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--tesla-light-gray);
 }
 
 .tile-icon {
-    font-size: 2rem;
-    margin-right: 10px;
+    font-size: 1.6rem;
+    margin-right: 12px;
+    opacity: 0.9;
 }
 
 .tile-header h2 {
-    font-size: 1.3rem;
+    font-size: 1.1rem;
     font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--tesla-text);
 }
 
 .tile-content {
@@ -92,7 +131,7 @@ header h1 {
     text-align: center;
     color: #888;
     padding: 40px 0;
-    font-style: italic;
+    font-weight: 300;
 }
 
 .hidden {
@@ -101,7 +140,9 @@ header h1 {
 
 /* Tesla-specific Tiles */
 .tesla-tile {
-    border: 1px solid rgba(232, 33, 39, 0.3);
+    background: var(--tesla-gray);
+    border: 1px solid var(--tesla-red);
+    border-left: 3px solid var(--tesla-red);
 }
 
 .tesla-battery-info {
@@ -113,10 +154,11 @@ header h1 {
 }
 
 .battery-level-large {
-    font-size: 3.5rem;
-    font-weight: 700;
-    color: #e82127;
+    font-size: 4rem;
+    font-weight: 300;
+    color: var(--tesla-white);
     margin-bottom: 5px;
+    letter-spacing: -2px;
 }
 
 .battery-range {
@@ -126,18 +168,18 @@ header h1 {
 
 .battery-bar {
     width: 100%;
-    height: 20px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
+    height: 8px;
+    background: var(--tesla-light-gray);
+    border-radius: 4px;
     overflow: hidden;
     margin: 15px 0;
 }
 
 .battery-bar-fill {
     height: 100%;
-    background: linear-gradient(90deg, #4ade80, #22c55e);
+    background: var(--tesla-white);
     transition: width 0.5s ease;
-    border-radius: 10px;
+    border-radius: 4px;
 }
 
 .charging-status {
@@ -167,9 +209,10 @@ header h1 {
 }
 
 .temp-value {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #e82127;
+    font-size: 2.2rem;
+    font-weight: 300;
+    color: var(--tesla-white);
+    letter-spacing: -1px;
 }
 
 .climate-status {
@@ -184,10 +227,11 @@ header h1 {
 }
 
 .vehicle-name {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #e82127;
+    font-size: 1.4rem;
+    font-weight: 500;
+    color: var(--tesla-white);
     margin-bottom: 15px;
+    letter-spacing: 0.5px;
 }
 
 .vehicle-stats {
@@ -197,21 +241,24 @@ header h1 {
 }
 
 .stat-item {
-    padding: 10px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
+    padding: 12px;
+    background: var(--tesla-black);
+    border-radius: 4px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    border: 1px solid var(--tesla-light-gray);
 }
 
 .stat-label {
-    color: #888;
+    color: #999;
+    font-size: 0.9rem;
+    font-weight: 400;
 }
 
 .stat-value {
-    font-weight: 600;
-    color: #fff;
+    font-weight: 500;
+    color: var(--tesla-white);
 }
 
 .auth-content {
@@ -233,10 +280,11 @@ header h1 {
 }
 
 .temp {
-    font-size: 3rem;
-    font-weight: 700;
-    color: #e82127;
+    font-size: 3.5rem;
+    font-weight: 300;
+    color: var(--tesla-white);
     margin-bottom: 10px;
+    letter-spacing: -2px;
 }
 
 .condition {
@@ -249,74 +297,248 @@ header h1 {
     color: #aaa;
 }
 
-/* News Tile */
-.news-list {
-    max-height: 300px;
+/* Navigation Tile */
+.navigation-tile .tile-content {
+    min-height: 300px;
+}
+
+.nav-search {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.nav-input {
+    flex: 1;
+    padding: 14px;
+    background: var(--tesla-black);
+    border: 1px solid var(--tesla-light-gray);
+    border-radius: 4px;
+    color: var(--tesla-white);
+    font-size: 1rem;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.nav-input:focus {
+    outline: none;
+    border-color: var(--tesla-blue);
+}
+
+.nav-results {
+    max-height: 250px;
     overflow-y: auto;
+    margin-bottom: 15px;
 }
 
-.news-item {
-    padding: 12px;
-    margin-bottom: 10px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 10px;
-    border-left: 3px solid #e82127;
-    transition: all 0.2s ease;
+.nav-result-item {
+    padding: 14px;
+    margin-bottom: 8px;
+    background: var(--tesla-black);
+    border-radius: 4px;
+    border: 1px solid var(--tesla-light-gray);
+    border-left: 3px solid var(--tesla-blue);
     cursor: pointer;
+    transition: all 0.2s ease;
 }
 
-.news-item:hover {
-    background: rgba(255, 255, 255, 0.1);
-    transform: translateX(5px);
+.nav-result-item:hover {
+    background: var(--tesla-gray);
+    border-left-color: var(--tesla-white);
 }
 
-.news-title {
+.result-name {
     font-weight: 600;
     margin-bottom: 5px;
     font-size: 0.95rem;
 }
 
-.news-source {
+.result-coords {
     font-size: 0.8rem;
     color: #888;
 }
 
-/* Quote Tile */
-.quote-content {
-    padding: 20px;
-    text-align: center;
+.quick-destinations h3 {
+    font-size: 1rem;
+    margin-bottom: 10px;
+    color: #aaa;
 }
 
-.quote-text {
-    font-size: 1.1rem;
-    font-style: italic;
-    line-height: 1.6;
-    margin-bottom: 15px;
-    color: #ddd;
+.destination-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
 }
 
-.quote-author {
+.dest-btn {
+    padding: 14px;
+    background: var(--tesla-black);
+    border: 1px solid var(--tesla-light-gray);
+    border-radius: 4px;
+    color: var(--tesla-white);
+    cursor: pointer;
+    transition: all 0.2s ease;
     font-size: 0.9rem;
-    color: #e82127;
-    font-weight: 600;
+    font-weight: 500;
+    font-family: 'Montserrat', sans-serif;
 }
 
-/* NASA Tile */
-.nasa-content {
+.dest-btn:hover {
+    border-color: var(--tesla-blue);
+    background: var(--tesla-gray);
+}
+
+.nav-success {
+    padding: 15px;
+    background: rgba(74, 222, 128, 0.2);
+    border-radius: 10px;
+    color: #4ade80;
     text-align: center;
 }
 
-#nasaImage {
-    width: 100%;
-    height: 200px;
-    object-fit: cover;
+.no-results, .error {
+    text-align: center;
+    padding: 20px;
+    color: #888;
+}
+
+/* Trip Computer Tile */
+.trip-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.trip-stat {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.05);
     border-radius: 10px;
+}
+
+.trip-label {
+    color: #888;
+}
+
+.trip-value {
+    font-weight: 500;
+    color: var(--tesla-white);
+}
+
+/* Speed & Performance Tile */
+.performance-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.perf-main {
+    text-align: center;
+    padding: 24px;
+    background: var(--tesla-black);
+    border-radius: 4px;
+    border: 1px solid var(--tesla-light-gray);
+}
+
+.speed-display {
+    font-size: 5rem;
+    font-weight: 300;
+    color: var(--tesla-white);
+    line-height: 1;
+    letter-spacing: -3px;
+}
+
+.speed-unit {
+    font-size: 1.2rem;
+    color: #888;
+    margin-top: 5px;
+}
+
+.range-estimate {
+    text-align: center;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+
+.range-label {
+    font-size: 0.9rem;
+    color: #888;
+    margin-bottom: 5px;
+}
+
+.range-value {
+    font-size: 1.8rem;
+    font-weight: 500;
+    color: var(--tesla-white);
+}
+
+.power-meter {
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+
+.power-label {
+    font-size: 0.9rem;
+    color: #888;
     margin-bottom: 10px;
 }
 
-.nasa-title {
+.power-bar {
+    width: 100%;
+    height: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.power-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #4ade80, #22c55e);
+    transition: width 0.3s ease;
+    border-radius: 10px;
+}
+
+.power-value {
+    text-align: center;
+    font-weight: 600;
+    color: #fff;
+}
+
+/* Settings Tile */
+.settings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.setting-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.setting-item label {
     font-size: 0.9rem;
-    color: #ccc;
+    color: #aaa;
+}
+
+.setting-select {
+    padding: 14px;
+    background: var(--tesla-black);
+    border: 1px solid var(--tesla-light-gray);
+    border-radius: 4px;
+    color: var(--tesla-white);
+    font-size: 1rem;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.setting-select:focus {
+    outline: none;
+    border-color: var(--tesla-blue);
 }
 
 /* Quick Links Tile */
@@ -328,72 +550,25 @@ header h1 {
 
 .link-btn {
     display: block;
-    padding: 12px;
-    background: rgba(232, 33, 39, 0.2);
-    border: 1px solid rgba(232, 33, 39, 0.5);
-    border-radius: 10px;
+    padding: 14px;
+    background: var(--tesla-black);
+    border: 1px solid var(--tesla-light-gray);
+    border-radius: 4px;
     text-decoration: none;
-    color: #ffffff;
+    color: var(--tesla-white);
     text-align: center;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
     font-weight: 500;
+    font-size: 0.9rem;
+    letter-spacing: 0.3px;
 }
 
 .link-btn:hover {
-    background: rgba(232, 33, 39, 0.4);
-    transform: scale(1.05);
+    border-color: var(--tesla-blue);
+    background: var(--tesla-gray);
 }
 
-/* Facts Tile */
-.fact-content {
-    padding: 15px;
-}
 
-.fact-text {
-    font-size: 1rem;
-    line-height: 1.6;
-    margin-bottom: 15px;
-    color: #ddd;
-}
-
-/* Currency Tile */
-.currency-converter {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.currency-input,
-.currency-select {
-    padding: 12px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 10px;
-    color: #ffffff;
-    font-size: 1rem;
-}
-
-.currency-input:focus,
-.currency-select:focus {
-    outline: none;
-    border-color: #e82127;
-}
-
-.arrow {
-    text-align: center;
-    font-size: 1.5rem;
-    color: #e82127;
-}
-
-.conversion-result {
-    padding: 15px;
-    background: rgba(232, 33, 39, 0.2);
-    border-radius: 10px;
-    text-align: center;
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: #fff;
-}
 
 /* Charging Tile */
 .charging-info {
@@ -402,16 +577,17 @@ header h1 {
 }
 
 .charger-item {
-    padding: 10px;
+    padding: 12px;
     margin-bottom: 8px;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 8px;
+    background: var(--tesla-black);
+    border-radius: 4px;
+    border: 1px solid var(--tesla-light-gray);
     font-size: 0.9rem;
 }
 
 .charger-name {
-    font-weight: 600;
-    color: #e82127;
+    font-weight: 500;
+    color: var(--tesla-white);
     margin-bottom: 3px;
 }
 
@@ -420,47 +596,52 @@ header h1 {
     font-size: 0.8rem;
 }
 
-/* Buttons */
+/* Buttons - Tesla Style */
 .action-btn {
-    padding: 12px 24px;
-    background: linear-gradient(135deg, #e82127 0%, #ff6b6b 100%);
+    padding: 14px 28px;
+    background: var(--tesla-blue);
     border: none;
-    border-radius: 10px;
-    color: white;
-    font-size: 1rem;
-    font-weight: 600;
+    border-radius: 4px;
+    color: var(--tesla-white);
+    font-size: 0.95rem;
+    font-weight: 500;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
     width: 100%;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-family: 'Montserrat', sans-serif;
 }
 
 .action-btn:hover {
-    transform: scale(1.05);
-    box-shadow: 0 5px 20px rgba(232, 33, 39, 0.5);
+    background: #5178e6;
+}
+
+.action-btn:active {
+    transform: scale(0.98);
 }
 
 .action-btn.small {
-    padding: 8px 16px;
-    font-size: 0.9rem;
+    padding: 10px 20px;
+    font-size: 0.85rem;
 }
 
-/* Scrollbar Styling */
+/* Scrollbar Styling - Tesla Minimalist */
 ::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 10px;
+    background: var(--tesla-black);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(232, 33, 39, 0.5);
-    border-radius: 10px;
+    background: var(--tesla-light-gray);
+    border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(232, 33, 39, 0.7);
+    background: #555;
 }
 
 /* Responsive Design */
@@ -469,22 +650,35 @@ header h1 {
         grid-template-columns: 1fr;
     }
 
-    header h1 {
-        font-size: 2rem;
+    .tesla-logo {
+        width: 100px;
     }
 
     .tile-icon {
-        font-size: 1.5rem;
+        font-size: 1.4rem;
+    }
+    
+    .speed-display {
+        font-size: 3.5rem;
+    }
+    
+    .battery-level-large {
+        font-size: 3rem;
     }
 }
 
 /* Touch-friendly for Tesla browser */
 @media (hover: none) {
     .tile:hover {
-        transform: none;
+        border-color: var(--tesla-light-gray);
     }
 
     .tile:active {
-        transform: scale(0.98);
+        transform: scale(0.99);
+        border-color: var(--tesla-red);
+    }
+    
+    .action-btn:hover {
+        background: var(--tesla-blue);
     }
 }
