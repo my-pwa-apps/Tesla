@@ -14,10 +14,10 @@ const TESLA_OAUTH_CONFIG = {
     
     // Use backend proxy for token exchange (avoids CORS and keeps secret secure)
     useBackend: true,
-    // Auto-detect backend URL: use Vercel in production, localhost in development
+    // Backend URL - Vercel deployment
     backendUrl: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:3000/api'
-        : 'https://your-vercel-project.vercel.app/api', // Replace with your Vercel URL after deployment
+        : 'https://tesla-gilt-delta.vercel.app/api',
     
     // Direct API URLs (not used when useBackend is true)
     tokenUrl: 'https://auth.tesla.com/oauth2/v3/token',
