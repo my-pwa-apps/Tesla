@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const CLIENT_ID = process.env.TESLA_CLIENT_ID || '98115f27-6ac6-4a11-9bc8-c256cce5f8cc';
 const CLIENT_SECRET = process.env.TESLA_CLIENT_SECRET || 'ta-secret.@vN5q2MiuF+S';
 const DOMAIN = 'my-pwa-apps.github.io';
-const REGION = 'na'; // North America - change to 'eu' for Europe, 'cn' for China
+const REGION = 'eu'; // Europe, Middle East, Africa
 
 console.log('🔐 Tesla Fleet API Registration\n');
 console.log('⚠️  IMPORTANT: Fleet API registration requires you to authenticate with your Tesla account first.\n');
