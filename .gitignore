@@ -35,3 +35,6 @@ Thumbs.db
 
 # Dependencies
 node_modules/
+
+# Tesla Fleet API - Keep private key secret!
+private-key.pem

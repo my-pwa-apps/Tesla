@@ -1,0 +1,6 @@
+Options +FollowSymLinks
+AddType application/x-pem-file .pem
+<Files "com.tesla.3p.public-key.pem">
+  Header set Content-Type "application/x-pem-file"
+  Header set Access-Control-Allow-Origin "*"
+</Files>
