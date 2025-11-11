@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -20,6 +21,9 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json());
+
+// Serve Tesla Fleet API public key
+app.use('/.well-known', express.static(path.join(__dirname, '.well-known')));
 
 const TESLA_CONFIG = {
     clientId: process.env.TESLA_CLIENT_ID,

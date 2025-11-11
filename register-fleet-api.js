@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const CLIENT_ID = process.env.TESLA_CLIENT_ID || '98115f27-6ac6-4a11-9bc8-c256cce5f8cc';
 const CLIENT_SECRET = process.env.TESLA_CLIENT_SECRET || 'ta-secret.@vN5q2MiuF+S$yZR';
 // Tesla expects the domain for partner registration, public key must be at domain/.well-known/
-const DOMAIN = 'my-pwa-apps.github.io';
+const DOMAIN = 'tesla-gilt-delta.vercel.app';
 // But public key is actually at my-pwa-apps.github.io/Tesla/.well-known/
 const PUBLIC_KEY_URL = 'https://my-pwa-apps.github.io/Tesla/.well-known/appspecific/com.tesla.3p.public-key.pem';
 const REGION = 'eu'; // Europe, Middle East, Africa
