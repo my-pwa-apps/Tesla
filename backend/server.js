@@ -14,6 +14,19 @@ const TESLA_CONFIG = {
     apiUrl: 'https://owner-api.teslamotors.com/api/1'
 };
 
+// Endpoint to get public config (Client ID only)
+app.get('/api/config', (req, res) => {
+    if (!TESLA_CONFIG.clientId) {
+        return res.status(500).json({ 
+            error: 'Tesla Client ID not configured in .env file' 
+        });
+    }
+    
+    res.json({
+        clientId: TESLA_CONFIG.clientId
+    });
+});
+
 // Exchange authorization code for tokens
 app.post('/api/auth/token', async (req, res) => {
     const { code, code_verifier, redirect_uri } = req.body;
@@ -133,7 +146,16 @@ app.get('/api/vehicles/:id/vehicle_data', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Backend server running on http://localhost:${PORT}`);
-    console.log('Tesla OAuth credentials loaded from environment variables');
+const HOST = '127.0.0.1';
+
+app.listen(PORT, HOST, () => {
+    console.log(`Backend server running on http://${HOST}:${PORT}`);
+    console.log(`Tesla OAuth credentials loaded from environment variables`);
+    console.log(`Client ID: ${TESLA_CONFIG.clientId ? TESLA_CONFIG.clientId.substring(0, 8) + '...' : 'NOT SET'}`);
+}).on('error', (err) => {
+    console.error('Failed to start server:', err.message);
+    if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use. Please kill the process or use a different port.`);
+    }
+    process.exit(1);
 });

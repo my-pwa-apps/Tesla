@@ -2,8 +2,9 @@
 
 // Tesla OAuth Configuration
 const TESLA_OAUTH_CONFIG = {
-    // ⚠️ Client ID can be public, but use backend for token exchange
-    clientId: 'cd34f85a-6aa4-46d8-895e-881a3c8d570e',
+    // Client ID - Get from backend to ensure it matches
+    // This will be fetched from backend on load
+    clientId: null,
     
     // ⚠️ NEVER include client secret in frontend!
     // It's stored securely in backend/.env
@@ -13,7 +14,10 @@ const TESLA_OAUTH_CONFIG = {
     
     // Use backend proxy for token exchange (avoids CORS and keeps secret secure)
     useBackend: true,
-    backendUrl: 'http://localhost:3000/api',
+    // Auto-detect backend URL: use Vercel in production, localhost in development
+    backendUrl: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:3000/api'
+        : 'https://your-vercel-project.vercel.app/api', // Replace with your Vercel URL after deployment
     
     // Direct API URLs (not used when useBackend is true)
     tokenUrl: 'https://auth.tesla.com/oauth2/v3/token',
@@ -21,6 +25,22 @@ const TESLA_OAUTH_CONFIG = {
     
     scope: 'openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds'
 };
+
+// Fetch Client ID from backend on load
+async function initializeOAuthConfig() {
+    try {
+        const response = await fetch(`${TESLA_OAUTH_CONFIG.backendUrl}/config`);
+        if (response.ok) {
+            const config = await response.json();
+            TESLA_OAUTH_CONFIG.clientId = config.clientId;
+            console.log('OAuth config loaded from backend');
+        } else {
+            console.error('Failed to load config from backend');
+        }
+    } catch (error) {
+        console.error('Backend not available:', error);
+    }
+}
 
 // Tesla API Configuration
 const TESLA_CONFIG = {
@@ -644,13 +664,14 @@ function setupTeslaAuth() {
     const authInfo = document.getElementById('teslaAuthInfo');
     
     // Check if client ID is configured
-    if (TESLA_OAUTH_CONFIG.clientId === 'YOUR_CLIENT_ID_HERE') {
-        authInfo.textContent = 'Using demo data (OAuth not configured)';
+    if (!TESLA_OAUTH_CONFIG.clientId) {
+        authInfo.innerHTML = 'Using demo data<br><small>Start backend: cd backend && npm install && npm start</small>';
         authInfo.style.color = '#fbbf24';
-        authBtn.textContent = 'Setup OAuth';
+        authInfo.style.fontSize = '0.85rem';
+        authBtn.textContent = 'How to Connect';
         
         authBtn.addEventListener('click', () => {
-            showOAuthSetupInstructions();
+            showBackendSetupInstructions();
         });
         return;
     }
@@ -688,12 +709,43 @@ function setupTeslaAuth() {
         authInfo.style.color = '#888';
         
         authBtn.addEventListener('click', () => {
+            if (!TESLA_OAUTH_CONFIG.clientId) {
+                alert('Backend server not running!\n\nPlease start it first:\n\n1. Open terminal\n2. cd backend\n3. npm install\n4. npm start\n5. Refresh this page');
+                return;
+            }
             initiateOAuthFlow();
         });
     }
     
     // Check for OAuth callback
     handleOAuthCallback();
+}
+
+function showBackendSetupInstructions() {
+    const instructions = `
+🚀 Quick Setup to Use Live Tesla Data:
+
+1. Open a NEW terminal/PowerShell window
+
+2. Navigate to backend folder:
+   cd "${window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'))}/backend"
+
+3. Install dependencies (first time only):
+   npm install
+
+4. Start the backend server:
+   npm start
+
+5. Refresh this page
+
+6. Click "Connect Tesla Account"
+
+That's it! Your credentials are already configured in the .env file.
+
+⚡ The backend server proxies Tesla API calls securely and avoids CORS issues.
+    `.trim();
+    
+    alert(instructions);
 }
 
 function handleOAuthCallback() {
@@ -803,14 +855,16 @@ function setupSettings() {
     });
 }
 
-// Initialize all tiles
-loadWeather();
-loadTeslaBattery();
-loadTeslaClimate();
-loadTeslaVehicleInfo();
-setupTeslaAuth();
-setupNavigation();
-setupSettings();
+// Initialize OAuth config and tiles
+initializeOAuthConfig().then(() => {
+    loadWeather();
+    loadTeslaBattery();
+    loadTeslaClimate();
+    loadTeslaVehicleInfo();
+    setupTeslaAuth();
+    setupNavigation();
+    setupSettings();
+});
 
 // Refresh Tesla data every 30 seconds
 setInterval(() => {
