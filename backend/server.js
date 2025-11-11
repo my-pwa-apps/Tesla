@@ -4,7 +4,21 @@ const fetch = require('node-fetch');
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+
+// CORS configuration - allow requests from GitHub Pages and localhost
+const corsOptions = {
+    origin: [
+        'https://my-pwa-apps.github.io',
+        'http://localhost:5500',
+        'http://127.0.0.1:5500',
+        'http://localhost:3000',
+        'http://127.0.0.1:3000'
+    ],
+    credentials: true,
+    optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const TESLA_CONFIG = {
