@@ -1,6 +1,6 @@
 # Tesla Dashboard Web App
 
-An attractive, feature-rich dashboard designed for the Tesla Model 3 Highland in-car browser.
+An attractive, feature-rich dashboard designed for the Tesla Model 3 Highland in-car browser with authentic Tesla design aesthetics.
 
 ## 🚗 Features
 
@@ -8,7 +8,7 @@ An attractive, feature-rich dashboard designed for the Tesla Model 3 Highland in
 - **Battery Status** - Level, range, charging status with visual indicators
 - **Climate Control** - Inside/outside temperature, climate status
 - **Vehicle Info** - Odometer, lock status, sentry mode
-- **Account Connection** - Firebase-powered secure authentication
+- **Account Connection** - OAuth authentication with auth.tesla.com
 
 ### General Information Tiles
 - **Weather** - Real-time weather based on location
@@ -20,71 +20,70 @@ An attractive, feature-rich dashboard designed for the Tesla Model 3 Highland in
 - **Nearby Charging** - EV charging stations via OpenChargeMap
 - **Quick Links** - Tesla resources and route planners
 
-## 🔥 Firebase Integration
+## � Tesla API Authentication
 
-This app uses Firebase to securely handle Tesla API integration, solving the OAuth complexity problem:
+This app supports direct OAuth integration with Tesla's auth.tesla.com.
 
-### Why Firebase?
-- ✅ **Secure** - Client secrets stay on backend
-- ✅ **No CORS issues** - Requests go through your Cloud Functions
-- ✅ **Token management** - Automatic refresh handling
-- ✅ **Data caching** - Firestore caches Tesla data
-- ✅ **Background sync** - Updates every 5 minutes
+### ⚠️ Important: CORS Limitations
 
-### Firebase Setup
+Direct browser-to-Tesla API calls will fail due to CORS restrictions. You have several options:
 
-1. **Create Firebase Project**
-   ```bash
-   # Visit https://console.firebase.google.com/
-   # Create a new project
+### Recommended Approaches:
+
+#### 1️⃣ Use Tessie (Easiest - $5/month)
+- Sign up at https://my.tessie.com/
+- Link your Tesla account through their OAuth
+- Use Tessie's API (no CORS issues)
+- Get instant access to all vehicle data
+
+#### 2️⃣ Use TeslaFi
+- Similar to Tessie
+- Great logging features
+- https://www.teslafi.com/
+
+#### 3️⃣ Self-Host TeslaMate (Free)
+- Open source Tesla data logger
+- Requires Docker/server setup
+- https://github.com/adriankumpf/teslamate
+
+#### 4️⃣ Build a Backend Proxy
+- Use Node.js, Python, or Go
+- Proxy requests to Tesla API
+- Handle OAuth token exchange securely
+- No CORS issues
+
+### Direct OAuth Setup (Advanced)
+
+1. **Register Your App**
+   - Visit: https://developer.tesla.com/
+   - Create a new application
+   - Get your Client ID and Client Secret
+
+2. **Configure the App**
+   ```javascript
+   // In app.js, update TESLA_OAUTH_CONFIG:
+   const TESLA_OAUTH_CONFIG = {
+       clientId: 'your_actual_client_id',
+       clientSecret: 'your_actual_client_secret',
+       redirectUri: window.location.origin + '/callback.html',
+       // ... rest of config
+   };
    ```
 
-2. **Enable Services**
-   - Authentication (Google Sign-In)
-   - Cloud Firestore
-   - Cloud Functions
+3. **Note on Security**
+   - ⚠️ Client secrets in browser code are visible to users
+   - This is acceptable for personal use only
+   - For production, use a backend proxy
 
-3. **Configure the App**
-   - Copy your Firebase config from Project Settings
-   - Update `firebase-config.js` with your credentials
+### OAuth Flow
 
-4. **Deploy Cloud Functions**
-   ```bash
-   cd functions
-   npm install
-   firebase login
-   firebase init functions
-   firebase deploy --only functions
-   ```
-
-5. **Set Tesla API Credentials** (in Firebase Console)
-   ```bash
-   firebase functions:config:set tesla.client_id="YOUR_TESLA_CLIENT_ID"
-   ```
-
-## 📡 Tesla API Integration
-
-### Cloud Functions Provided
-
-- `getTeslaVehicleData` - Fetch current vehicle data
-- `refreshTeslaToken` - Refresh expired access tokens
-- `getTeslaVehicles` - List all vehicles on account
-- `wakeTeslaVehicle` - Wake sleeping vehicle
-- `scheduledTeslaDataSync` - Background sync every 5 minutes
-
-### Firestore Structure
-
-```
-users/{userId}
-  - teslaAccessToken: string
-  - teslaRefreshToken: string
-  - teslaVehicleId: string
-  - tokenUpdated: timestamp
-
-tesla_cache/{userId}
-  - data: object (vehicle data)
-  - timestamp: timestamp
-```
+The app implements PKCE (Proof Key for Code Exchange) for security:
+1. User clicks "Connect Tesla Account"
+2. Redirects to auth.tesla.com
+3. User logs in and authorizes
+4. Returns to callback.html with authorization code
+5. Exchanges code for access token
+6. Stores tokens in localStorage
 
 ## 🎨 Free APIs Used
 
@@ -100,30 +99,29 @@ tesla_cache/{userId}
 
 ## 🚀 Quick Start
 
-### Without Firebase (Demo Mode)
+### Demo Mode (No Setup Required)
 1. Open `index.html` in your browser
 2. All tiles work with demo/mock data
-3. Tesla tiles show example data
+3. Tesla tiles show realistic example data
 
-### With Firebase (Full Features)
-1. Complete Firebase setup above
-2. Sign in with Google
-3. Link your Tesla account
-4. Enjoy real-time vehicle data!
+### With Real Tesla Data
+1. Choose your preferred method (Tessie/TeslaFi/Backend)
+2. Update OAuth configuration in `app.js`
+3. Click "Connect Tesla Account"
+4. Authorize the app
+5. Enjoy real-time vehicle data!
 
-## 🔐 Tesla Authentication Options
+## 🎨 Tesla Design System
 
-### Option 1: Tessie (Recommended for simplicity)
-- Sign up at https://my.tessie.com/
-- Link Tesla account through their OAuth
-- Use their API token (simpler than direct Tesla API)
-- Costs ~$5/month
+The app faithfully recreates Tesla's signature aesthetic:
 
-### Option 2: Direct Tesla API (Free but complex)
-- Register at https://tesla.com/developers
-- Implement full OAuth 2.0 flow
-- Handle token refresh logic
-- Included in our Cloud Functions
+- **Typography**: Montserrat font (closest to Tesla's Gotham)
+- **Colors**: Pure black, dark grays, Tesla red (#cc0000), Tesla blue (#3e6ae1)
+- **Layout**: Minimalist, angular design with sharp corners
+- **Logo**: Official Tesla SVG logo in header
+- **Buttons**: Tesla blue primary actions
+- **Typography**: Light font weights (300-500) for that premium feel
+- **Spacing**: Clean, generous spacing like Tesla interfaces
 
 ## 🎯 Design Features
 
@@ -144,10 +142,11 @@ Tested and optimized for:
 
 ## 🔒 Security Notes
 
-- Never commit `firebase-config.js` with real credentials to public repos
-- Use environment variables for sensitive data
-- Tesla tokens are stored securely in Firestore (server-side)
-- Client-side code never sees refresh tokens
+- ⚠️ Client secrets in browser are visible - use only for personal projects
+- For production apps, implement a backend proxy
+- Tokens stored in localStorage (less secure than httpOnly cookies)
+- PKCE implemented for additional OAuth security
+- Consider using Tessie/TeslaFi for better security
 
 ## 📝 License
 
@@ -156,12 +155,15 @@ MIT - Feel free to use and modify!
 ## 🤝 Contributing
 
 Suggestions and PRs welcome! Some ideas:
-- [ ] Trip planning integration
+- [ ] Backend proxy implementation
+- [ ] Tessie API integration
+- [ ] Trip planning with A Better Route Planner
 - [ ] Scheduled charging controls
 - [ ] Software update notifications
 - [ ] Multiple vehicle support
 - [ ] Custom tile configuration
 - [ ] PWA support for offline use
+- [ ] Voice control integration
 
 ## 🎉 Credits
 

@@ -1,20 +1,34 @@
 // Tesla Dashboard App
 
-// Initialize Firebase
-let firebaseInitialized = false;
-let firebaseFunctions = null;
-
-if (typeof window.firebaseApp !== 'undefined') {
-    firebaseInitialized = window.firebaseApp.init();
-    if (firebaseInitialized) {
-        firebaseFunctions = firebase.functions();
-    }
-}
+// Tesla OAuth Configuration
+const TESLA_OAUTH_CONFIG = {
+    // ⚠️ Client ID can be public, but use backend for token exchange
+    clientId: 'cd34f85a-6aa4-46d8-895e-881a3c8d570e',
+    
+    // ⚠️ NEVER include client secret in frontend!
+    // It's stored securely in backend/.env
+    
+    redirectUri: window.location.origin + '/callback.html',
+    authUrl: 'https://auth.tesla.com/oauth2/v3/authorize',
+    
+    // Use backend proxy for token exchange (avoids CORS and keeps secret secure)
+    useBackend: true,
+    backendUrl: 'http://localhost:3000/api',
+    
+    // Direct API URLs (not used when useBackend is true)
+    tokenUrl: 'https://auth.tesla.com/oauth2/v3/token',
+    apiUrl: 'https://owner-api.teslamotors.com/api/1',
+    
+    scope: 'openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds'
+};
 
 // Tesla API Configuration
 const TESLA_CONFIG = {
-    useFirebase: firebaseInitialized, // Use Firebase if available
-    useMockData: !firebaseInitialized // Use mock data only if Firebase isn't available
+    accessToken: localStorage.getItem('tesla_access_token') || null,
+    refreshToken: localStorage.getItem('tesla_refresh_token') || null,
+    tokenExpiry: localStorage.getItem('tesla_token_expiry') || null,
+    vehicleId: localStorage.getItem('tesla_vehicle_id') || null,
+    useMockData: !localStorage.getItem('tesla_access_token')
 };
 
 // Mock Tesla data for demo purposes
@@ -327,44 +341,222 @@ async function findChargers() {
 
 document.getElementById('findChargersBtn').addEventListener('click', findChargers);
 
-// Tesla API Functions with Firebase Integration
-async function getTeslaVehicleData() {
-    // If Firebase is configured, use Cloud Functions
-    if (TESLA_CONFIG.useFirebase && firebaseFunctions) {
-        try {
-            const getTeslaData = firebaseFunctions.httpsCallable('getTeslaVehicleData');
-            const result = await getTeslaData();
-            return result.data;
-        } catch (error) {
-            console.error('Firebase function error:', error);
-            // Try to get cached data from Firestore
-            try {
-                const db = window.firebaseApp.getDb();
-                const auth = window.firebaseApp.getAuth();
-                const user = auth.currentUser;
-                
-                if (user) {
-                    const cacheDoc = await db.collection('tesla_cache').doc(user.uid).get();
-                    if (cacheDoc.exists) {
-                        const cacheData = cacheDoc.data();
-                        console.log('Using cached Tesla data');
-                        return cacheData.data;
-                    }
-                }
-            } catch (cacheError) {
-                console.error('Cache retrieval error:', cacheError);
-            }
-            // Fallback to mock data
-            return MOCK_TESLA_DATA;
-        }
+// Tesla OAuth Functions
+function generateCodeVerifier() {
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    return base64URLEncode(array);
+}
+
+function base64URLEncode(buffer) {
+    return btoa(String.fromCharCode.apply(null, buffer))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+}
+
+async function sha256(plain) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(plain);
+    return crypto.subtle.digest('SHA-256', data);
+}
+
+async function generateCodeChallenge(verifier) {
+    const hashed = await sha256(verifier);
+    return base64URLEncode(new Uint8Array(hashed));
+}
+
+function initiateOAuthFlow() {
+    // Generate PKCE parameters
+    const codeVerifier = generateCodeVerifier();
+    const state = generateCodeVerifier();
+    
+    // Store for later use
+    sessionStorage.setItem('code_verifier', codeVerifier);
+    sessionStorage.setItem('oauth_state', state);
+    
+    // Generate code challenge
+    generateCodeChallenge(codeVerifier).then(codeChallenge => {
+        // Build authorization URL
+        const params = new URLSearchParams({
+            client_id: TESLA_OAUTH_CONFIG.clientId,
+            redirect_uri: TESLA_OAUTH_CONFIG.redirectUri,
+            response_type: 'code',
+            scope: TESLA_OAUTH_CONFIG.scope,
+            state: state,
+            code_challenge: codeChallenge,
+            code_challenge_method: 'S256'
+        });
+        
+        // Redirect to Tesla OAuth
+        window.location.href = `${TESLA_OAUTH_CONFIG.authUrl}?${params.toString()}`;
+    });
+}
+
+async function exchangeCodeForToken(code) {
+    const codeVerifier = sessionStorage.getItem('code_verifier');
+    
+    if (!codeVerifier) {
+        throw new Error('Code verifier not found');
     }
     
-    // Fallback to mock data if Firebase not configured
+    try {
+        // Use backend proxy for secure token exchange
+        const response = await fetch(`${TESLA_OAUTH_CONFIG.backendUrl}/auth/token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                code: code,
+                code_verifier: codeVerifier,
+                redirect_uri: TESLA_OAUTH_CONFIG.redirectUri
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Token exchange failed');
+        }
+        
+        const data = await response.json();
+        
+        // Store tokens
+        localStorage.setItem('tesla_access_token', data.access_token);
+        localStorage.setItem('tesla_refresh_token', data.refresh_token);
+        localStorage.setItem('tesla_token_expiry', Date.now() + (data.expires_in * 1000));
+        
+        TESLA_CONFIG.accessToken = data.access_token;
+        TESLA_CONFIG.refreshToken = data.refresh_token;
+        TESLA_CONFIG.tokenExpiry = Date.now() + (data.expires_in * 1000);
+        TESLA_CONFIG.useMockData = false;
+        
+        // Clean up session storage
+        sessionStorage.removeItem('code_verifier');
+        sessionStorage.removeItem('oauth_state');
+        
+        return data;
+    } catch (error) {
+        console.error('Token exchange error:', error);
+        throw error;
+    }
+}
+
+async function refreshAccessToken() {
+    if (!TESLA_CONFIG.refreshToken) {
+        throw new Error('No refresh token available');
+    }
+    
+    try {
+        // Use backend proxy for secure token refresh
+        const response = await fetch(`${TESLA_OAUTH_CONFIG.backendUrl}/auth/refresh`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                refresh_token: TESLA_CONFIG.refreshToken
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Token refresh failed');
+        }
+        
+        const data = await response.json();
+        
+        // Update stored tokens
+        localStorage.setItem('tesla_access_token', data.access_token);
+        localStorage.setItem('tesla_refresh_token', data.refresh_token);
+        localStorage.setItem('tesla_token_expiry', Date.now() + (data.expires_in * 1000));
+        
+        TESLA_CONFIG.accessToken = data.access_token;
+        TESLA_CONFIG.refreshToken = data.refresh_token;
+        TESLA_CONFIG.tokenExpiry = Date.now() + (data.expires_in * 1000);
+        
+        return data;
+    } catch (error) {
+        console.error('Token refresh error:', error);
+        throw error;
+    }
+}
+
+// Tesla API Functions
+async function getTeslaVehicleData() {
     if (TESLA_CONFIG.useMockData) {
         return MOCK_TESLA_DATA;
     }
     
-    return MOCK_TESLA_DATA;
+    // Check if token needs refresh
+    if (TESLA_CONFIG.tokenExpiry && Date.now() >= TESLA_CONFIG.tokenExpiry) {
+        try {
+            await refreshAccessToken();
+        } catch (error) {
+            console.error('Failed to refresh token:', error);
+            return MOCK_TESLA_DATA;
+        }
+    }
+    
+    try {
+        // Get vehicle ID if not set
+        if (!TESLA_CONFIG.vehicleId) {
+            const vehicles = await getTeslaVehicles();
+            if (vehicles && vehicles.length > 0) {
+                TESLA_CONFIG.vehicleId = vehicles[0].id_s;
+                localStorage.setItem('tesla_vehicle_id', TESLA_CONFIG.vehicleId);
+            } else {
+                throw new Error('No vehicles found');
+            }
+        }
+        
+        // Use backend proxy for API calls
+        const response = await fetch(
+            `${TESLA_OAUTH_CONFIG.backendUrl}/vehicles/${TESLA_CONFIG.vehicleId}/vehicle_data`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${TESLA_CONFIG.accessToken}`
+                }
+            }
+        );
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch vehicle data');
+        }
+        
+        const data = await response.json();
+        return data.response;
+    } catch (error) {
+        console.error('Tesla API error:', error);
+        return MOCK_TESLA_DATA;
+    }
+}
+
+async function getTeslaVehicles() {
+    if (!TESLA_CONFIG.accessToken) {
+        return [];
+    }
+    
+    try {
+        // Use backend proxy for API calls
+        const response = await fetch(
+            `${TESLA_OAUTH_CONFIG.backendUrl}/vehicles`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${TESLA_CONFIG.accessToken}`
+                }
+            }
+        );
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch vehicles');
+        }
+        
+        const data = await response.json();
+        return data.response;
+    } catch (error) {
+        console.error('Failed to fetch vehicles:', error);
+        return [];
+    }
 }
 
 async function loadTeslaBattery() {
@@ -446,130 +638,137 @@ async function loadTeslaVehicleInfo() {
     }
 }
 
-// Setup Tesla API authentication with Firebase
+// Setup Tesla API authentication
 function setupTeslaAuth() {
     const authBtn = document.getElementById('teslaAuthBtn');
     const authInfo = document.getElementById('teslaAuthInfo');
     
-    if (!TESLA_CONFIG.useFirebase) {
-        authInfo.textContent = 'Using demo data (Firebase not configured)';
+    // Check if client ID is configured
+    if (TESLA_OAUTH_CONFIG.clientId === 'YOUR_CLIENT_ID_HERE') {
+        authInfo.textContent = 'Using demo data (OAuth not configured)';
         authInfo.style.color = '#fbbf24';
-        authBtn.textContent = 'Setup Firebase';
+        authBtn.textContent = 'Setup OAuth';
         
         authBtn.addEventListener('click', () => {
-            showFirebaseSetupInstructions();
+            showOAuthSetupInstructions();
         });
         return;
     }
     
-    // Check Firebase auth state
-    const auth = window.firebaseApp.getAuth();
-    
-    auth.onAuthStateChanged(async (user) => {
-        if (user) {
-            // User is signed in
-            const db = window.firebaseApp.getDb();
-            const userDoc = await db.collection('users').doc(user.uid).get();
-            
-            if (userDoc.exists && userDoc.data().teslaAccessToken) {
-                authBtn.textContent = 'Disconnect Tesla';
-                authInfo.textContent = 'Connected to your Tesla';
-                authInfo.style.color = '#4ade80';
-            } else {
-                authBtn.textContent = 'Link Tesla Account';
-                authInfo.textContent = 'Signed in - Link your Tesla';
-                authInfo.style.color = '#fbbf24';
-            }
-        } else {
-            // User is not signed in
-            authBtn.textContent = 'Sign In with Google';
-            authInfo.textContent = 'Sign in to connect Tesla';
-            authInfo.style.color = '#888';
-        }
-    });
-    
-    authBtn.addEventListener('click', async () => {
-        const user = auth.currentUser;
+    // Check if already authenticated
+    if (TESLA_CONFIG.accessToken) {
+        authBtn.textContent = 'Disconnect Tesla';
+        authInfo.textContent = 'Connected to your Tesla';
+        authInfo.style.color = '#4ade80';
         
-        if (!user) {
-            // Sign in with Google
-            const provider = new firebase.auth.GoogleAuthProvider();
-            try {
-                await auth.signInWithPopup(provider);
-            } catch (error) {
-                console.error('Sign in error:', error);
-                alert('Sign in failed: ' + error.message);
+        authBtn.addEventListener('click', () => {
+            if (confirm('Disconnect your Tesla account?')) {
+                localStorage.removeItem('tesla_access_token');
+                localStorage.removeItem('tesla_refresh_token');
+                localStorage.removeItem('tesla_token_expiry');
+                localStorage.removeItem('tesla_vehicle_id');
+                
+                TESLA_CONFIG.accessToken = null;
+                TESLA_CONFIG.refreshToken = null;
+                TESLA_CONFIG.tokenExpiry = null;
+                TESLA_CONFIG.vehicleId = null;
+                TESLA_CONFIG.useMockData = true;
+                
+                authBtn.textContent = 'Connect Tesla Account';
+                authInfo.textContent = 'Using demo data';
+                authInfo.style.color = '#888';
+                
+                // Reload page to refresh with demo data
+                setTimeout(() => location.reload(), 1000);
             }
-        } else {
-            // Check if Tesla is linked
-            const db = window.firebaseApp.getDb();
-            const userDoc = await db.collection('users').doc(user.uid).get();
-            
-            if (userDoc.exists && userDoc.data().teslaAccessToken) {
-                // Disconnect Tesla
-                if (confirm('Disconnect your Tesla account?')) {
-                    await db.collection('users').doc(user.uid).update({
-                        teslaAccessToken: firebase.firestore.FieldValue.delete(),
-                        teslaRefreshToken: firebase.firestore.FieldValue.delete(),
-                        teslaVehicleId: firebase.firestore.FieldValue.delete()
-                    });
-                    authInfo.textContent = 'Tesla disconnected';
-                    authInfo.style.color = '#888';
-                }
-            } else {
-                // Link Tesla account
-                showTeslaLinkInstructions();
-            }
-        }
-    });
-}
-
-function showFirebaseSetupInstructions() {
-    const instructions = `
-📱 Firebase Setup Instructions:
-
-1. Go to https://console.firebase.google.com/
-2. Create a new project (or select existing)
-3. Enable Authentication (Google Sign-In)
-4. Enable Cloud Firestore
-5. Enable Cloud Functions
-6. Get your Firebase config from Project Settings
-7. Update firebase-config.js with your credentials
-8. Deploy Cloud Functions:
-   cd functions
-   npm install
-   firebase deploy --only functions
-
-Benefits:
-✅ Secure OAuth handling
-✅ No CORS issues
-✅ Automatic token refresh
-✅ Data caching
-✅ Background sync every 5 minutes
-    `.trim();
+        });
+    } else {
+        authBtn.textContent = 'Connect Tesla Account';
+        authInfo.textContent = 'Using demo data';
+        authInfo.style.color = '#888';
+        
+        authBtn.addEventListener('click', () => {
+            initiateOAuthFlow();
+        });
+    }
     
-    alert(instructions);
+    // Check for OAuth callback
+    handleOAuthCallback();
 }
 
-function showTeslaLinkInstructions() {
+function handleOAuthCallback() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    const error = urlParams.get('error');
+    
+    if (error) {
+        console.error('OAuth error:', error);
+        alert('Authentication failed: ' + error);
+        return;
+    }
+    
+    if (code && state) {
+        const savedState = sessionStorage.getItem('oauth_state');
+        
+        if (state !== savedState) {
+            console.error('State mismatch');
+            alert('Authentication failed: State mismatch');
+            return;
+        }
+        
+        // Exchange code for token
+        exchangeCodeForToken(code)
+            .then(() => {
+                // Clear URL parameters
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
+                // Reload page to show connected state
+                location.reload();
+            })
+            .catch(error => {
+                console.error('Token exchange failed:', error);
+                alert('Failed to complete authentication. This may be due to CORS restrictions. Consider using Tessie or a backend proxy.');
+            });
+    }
+}
+
+function showOAuthSetupInstructions() {
     const instructions = `
-🚗 Link Tesla Account:
+� Tesla OAuth Setup:
 
-You'll need to use Tesla's OAuth flow. Two options:
+⚠️ IMPORTANT: Direct OAuth from browser has limitations due to CORS.
 
-OPTION 1 - Use Tessie (Easiest):
-1. Sign up at https://my.tessie.com/
-2. Link your Tesla account there
-3. Get API token from Tessie
-4. Store in Firestore (we'll add this flow)
+RECOMMENDED APPROACHES:
 
-OPTION 2 - Direct Tesla OAuth (Advanced):
-1. Register app at https://tesla.com/developers
-2. Implement OAuth flow in Firebase Functions
-3. Get access token and vehicle ID
-4. Store securely in Firestore
+1️⃣ USE TESSIE (Easiest - $5/month):
+   - Sign up: https://my.tessie.com/
+   - Link your Tesla account
+   - Get API token
+   - Use Tessie's API (no CORS issues)
+   
+2️⃣ USE TESLAFI:
+   - Sign up: https://www.teslafi.com/
+   - Similar to Tessie
+   - Good logging features
 
-For now, the app uses demo data to show functionality.
+3️⃣ SELF-HOST TESLAMATE:
+   - Free & open source
+   - Requires Docker/server
+   - https://github.com/adriankumpf/teslamate
+
+4️⃣ BUILD BACKEND PROXY:
+   - Use Node.js/Python backend
+   - Proxy Tesla API calls
+   - Handle OAuth securely
+
+TO USE DIRECT OAUTH (Advanced):
+1. Register app: https://developer.tesla.com/
+2. Get Client ID & Secret
+3. Update TESLA_OAUTH_CONFIG in app.js
+4. Note: Will still hit CORS issues without backend
+
+Currently using demo data to show functionality.
     `.trim();
     
     alert(instructions);
