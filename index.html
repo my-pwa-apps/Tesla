@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tesla Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Tesla Dashboard</h1>
+            <div class="time-display" id="currentTime"></div>
+        </header>
+
+        <div class="dashboard-grid">
+            <!-- Weather Tile -->
+            <div class="tile weather-tile" id="weatherTile">
+                <div class="tile-header">
+                    <span class="tile-icon">🌤️</span>
+                    <h2>Weather</h2>
+                </div>
+                <div class="tile-content">
+                    <div class="loading">Loading...</div>
+                    <div class="weather-info hidden">
+                        <div class="temp" id="temperature"></div>
+                        <div class="condition" id="condition"></div>
+                        <div class="location" id="location"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- News Tile -->
+            <div class="tile news-tile" id="newsTile">
+                <div class="tile-header">
+                    <span class="tile-icon">📰</span>
+                    <h2>Top News</h2>
+                </div>
+                <div class="tile-content">
+                    <div class="loading">Loading...</div>
+                    <div class="news-list hidden" id="newsList"></div>
+                </div>
+            </div>
+
+            <!-- Charging Stations Tile -->
+            <div class="tile charging-tile" id="chargingTile">
+                <div class="tile-header">
+                    <span class="tile-icon">⚡</span>
+                    <h2>Nearby Charging</h2>
+                </div>
+                <div class="tile-content">
+                    <button class="action-btn" id="findChargersBtn">Find Chargers</button>
+                    <div class="charging-info hidden" id="chargingInfo"></div>
+                </div>
+            </div>
+
+            <!-- Quote of the Day Tile -->
+            <div class="tile quote-tile" id="quoteTile">
+                <div class="tile-header">
+                    <span class="tile-icon">💭</span>
+                    <h2>Inspiration</h2>
+                </div>
+                <div class="tile-content">
+                    <div class="loading">Loading...</div>
+                    <div class="quote-content hidden">
+                        <p class="quote-text" id="quoteText"></p>
+                        <p class="quote-author" id="quoteAuthor"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NASA Photo Tile -->
+            <div class="tile nasa-tile" id="nasaTile">
+                <div class="tile-header">
+                    <span class="tile-icon">🚀</span>
+                    <h2>NASA Photo</h2>
+                </div>
+                <div class="tile-content">
+                    <div class="loading">Loading...</div>
+                    <div class="nasa-content hidden">
+                        <img id="nasaImage" alt="NASA Image">
+                        <p class="nasa-title" id="nasaTitle"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Links Tile -->
+            <div class="tile links-tile">
+                <div class="tile-header">
+                    <span class="tile-icon">🔗</span>
+                    <h2>Quick Links</h2>
+                </div>
+                <div class="tile-content">
+                    <div class="quick-links">
+                        <a href="https://www.tesla.com/charging" target="_blank" class="link-btn">Tesla Superchargers</a>
+                        <a href="https://www.plugshare.com" target="_blank" class="link-btn">PlugShare</a>
+                        <a href="https://abetterrouteplanner.com" target="_blank" class="link-btn">Route Planner</a>
+                        <a href="https://www.tesla.com/support" target="_blank" class="link-btn">Tesla Support</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Random Facts Tile -->
+            <div class="tile facts-tile" id="factsTile">
+                <div class="tile-header">
+                    <span class="tile-icon">🧠</span>
+                    <h2>Did You Know?</h2>
+                </div>
+                <div class="tile-content">
+                    <div class="loading">Loading...</div>
+                    <div class="fact-content hidden">
+                        <p class="fact-text" id="factText"></p>
+                        <button class="action-btn small" id="newFactBtn">New Fact</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Currency Exchange Tile -->
+            <div class="tile currency-tile" id="currencyTile">
+                <div class="tile-header">
+                    <span class="tile-icon">💱</span>
+                    <h2>Currency</h2>
+                </div>
+                <div class="tile-content">
+                    <div class="currency-converter">
+                        <input type="number" id="amount" value="100" class="currency-input">
+                        <select id="fromCurrency" class="currency-select">
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                            <option value="JPY">JPY</option>
+                        </select>
+                        <span class="arrow">→</span>
+                        <select id="toCurrency" class="currency-select">
+                            <option value="EUR">EUR</option>
+                            <option value="USD">USD</option>
+                            <option value="GBP">GBP</option>
+                            <option value="JPY">JPY</option>
+                        </select>
+                        <button class="action-btn small" id="convertBtn">Convert</button>
+                        <div class="conversion-result hidden" id="conversionResult"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

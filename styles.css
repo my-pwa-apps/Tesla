@@ -1,0 +1,362 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+    color: #ffffff;
+    overflow-x: hidden;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 15px;
+    backdrop-filter: blur(10px);
+}
+
+header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #e82127 0%, #ff6b6b 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 10px;
+}
+
+.time-display {
+    font-size: 1.2rem;
+    color: #aaaaaa;
+    font-weight: 300;
+}
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.tile {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    padding: 20px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.tile:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 40px 0 rgba(232, 33, 39, 0.3);
+    border-color: rgba(232, 33, 39, 0.5);
+}
+
+.tile-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tile-icon {
+    font-size: 2rem;
+    margin-right: 10px;
+}
+
+.tile-header h2 {
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+
+.tile-content {
+    min-height: 120px;
+}
+
+.loading {
+    text-align: center;
+    color: #888;
+    padding: 40px 0;
+    font-style: italic;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Weather Tile */
+.weather-info {
+    text-align: center;
+}
+
+.temp {
+    font-size: 3rem;
+    font-weight: 700;
+    color: #e82127;
+    margin-bottom: 10px;
+}
+
+.condition {
+    font-size: 1.2rem;
+    margin-bottom: 5px;
+}
+
+.location {
+    font-size: 0.9rem;
+    color: #aaa;
+}
+
+/* News Tile */
+.news-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.news-item {
+    padding: 12px;
+    margin-bottom: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    border-left: 3px solid #e82127;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.news-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateX(5px);
+}
+
+.news-title {
+    font-weight: 600;
+    margin-bottom: 5px;
+    font-size: 0.95rem;
+}
+
+.news-source {
+    font-size: 0.8rem;
+    color: #888;
+}
+
+/* Quote Tile */
+.quote-content {
+    padding: 20px;
+    text-align: center;
+}
+
+.quote-text {
+    font-size: 1.1rem;
+    font-style: italic;
+    line-height: 1.6;
+    margin-bottom: 15px;
+    color: #ddd;
+}
+
+.quote-author {
+    font-size: 0.9rem;
+    color: #e82127;
+    font-weight: 600;
+}
+
+/* NASA Tile */
+.nasa-content {
+    text-align: center;
+}
+
+#nasaImage {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    border-radius: 10px;
+    margin-bottom: 10px;
+}
+
+.nasa-title {
+    font-size: 0.9rem;
+    color: #ccc;
+}
+
+/* Quick Links Tile */
+.quick-links {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.link-btn {
+    display: block;
+    padding: 12px;
+    background: rgba(232, 33, 39, 0.2);
+    border: 1px solid rgba(232, 33, 39, 0.5);
+    border-radius: 10px;
+    text-decoration: none;
+    color: #ffffff;
+    text-align: center;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.link-btn:hover {
+    background: rgba(232, 33, 39, 0.4);
+    transform: scale(1.05);
+}
+
+/* Facts Tile */
+.fact-content {
+    padding: 15px;
+}
+
+.fact-text {
+    font-size: 1rem;
+    line-height: 1.6;
+    margin-bottom: 15px;
+    color: #ddd;
+}
+
+/* Currency Tile */
+.currency-converter {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.currency-input,
+.currency-select {
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    color: #ffffff;
+    font-size: 1rem;
+}
+
+.currency-input:focus,
+.currency-select:focus {
+    outline: none;
+    border-color: #e82127;
+}
+
+.arrow {
+    text-align: center;
+    font-size: 1.5rem;
+    color: #e82127;
+}
+
+.conversion-result {
+    padding: 15px;
+    background: rgba(232, 33, 39, 0.2);
+    border-radius: 10px;
+    text-align: center;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+/* Charging Tile */
+.charging-info {
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.charger-item {
+    padding: 10px;
+    margin-bottom: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+
+.charger-name {
+    font-weight: 600;
+    color: #e82127;
+    margin-bottom: 3px;
+}
+
+.charger-distance {
+    color: #aaa;
+    font-size: 0.8rem;
+}
+
+/* Buttons */
+.action-btn {
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #e82127 0%, #ff6b6b 100%);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: 100%;
+}
+
+.action-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 5px 20px rgba(232, 33, 39, 0.5);
+}
+
+.action-btn.small {
+    padding: 8px 16px;
+    font-size: 0.9rem;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(232, 33, 39, 0.5);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(232, 33, 39, 0.7);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+
+    header h1 {
+        font-size: 2rem;
+    }
+
+    .tile-icon {
+        font-size: 1.5rem;
+    }
+}
+
+/* Touch-friendly for Tesla browser */
+@media (hover: none) {
+    .tile:hover {
+        transform: none;
+    }
+
+    .tile:active {
+        transform: scale(0.98);
+    }
+}
