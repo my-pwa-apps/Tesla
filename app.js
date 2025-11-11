@@ -9,7 +9,8 @@ const TESLA_OAUTH_CONFIG = {
     // ⚠️ NEVER include client secret in frontend!
     // It's stored securely in backend/.env
     
-    redirectUri: window.location.origin + '/callback.html',
+    // Redirect URI - must match exactly what's registered in Tesla Developer Portal
+    redirectUri: window.location.origin + (window.location.pathname.includes('/Tesla/') ? '/Tesla' : '') + '/callback.html',
     authUrl: 'https://auth.tesla.com/oauth2/v3/authorize',
     
     // Use backend proxy for token exchange (avoids CORS and keeps secret secure)
