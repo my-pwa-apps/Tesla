@@ -389,6 +389,15 @@ async function generateCodeChallenge(verifier) {
 }
 
 function initiateOAuthFlow() {
+    // Check if client ID is loaded
+    if (!TESLA_OAUTH_CONFIG.clientId) {
+        alert('Client ID not loaded yet. Please wait a moment and try again.');
+        console.error('Client ID not loaded from backend');
+        return;
+    }
+    
+    console.log('Starting OAuth flow with client ID:', TESLA_OAUTH_CONFIG.clientId);
+    
     // Generate PKCE parameters
     const codeVerifier = generateCodeVerifier();
     const state = generateCodeVerifier();
