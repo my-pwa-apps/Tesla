@@ -10,8 +10,8 @@ const TESLA_OAUTH_CONFIG = {
     // It's stored securely in backend/.env
     
     // Redirect URI - must match exactly what's registered in Tesla Developer Portal
-    // Use Vercel backend callback since Fleet API is registered there
-    redirectUri: 'https://bart-gilt-delta.vercel.app/callback.html',
+    // Using GitHub Pages callback temporarily until Vercel callback is accepted by Tesla
+    redirectUri: 'https://my-pwa-apps.github.io/Tesla/callback.html',
     authUrl: 'https://auth.tesla.com/oauth2/v3/authorize',
     
     // Use backend proxy for token exchange (avoids CORS and keeps secret secure)
@@ -416,9 +416,9 @@ function initiateOAuthFlow() {
             scope: TESLA_OAUTH_CONFIG.scope,
             state: state,
             code_challenge: codeChallenge,
-            code_challenge_method: 'S256'
-            // Note: audience parameter may cause 400 errors for some accounts
-            // audience: 'https://fleet-api.prd.eu.vn.cloud.tesla.com'
+            code_challenge_method: 'S256',
+            locale: 'en-US',
+            prompt: 'login'
         });
         
         // Redirect to Tesla OAuth
@@ -694,6 +694,21 @@ function setupTeslaAuth() {
         authBtn.textContent = 'Disconnect Tesla';
         authInfo.textContent = 'Connected to your Tesla';
         authInfo.style.color = '#4ade80';
+        
+        // Add virtual key setup button
+        const virtualKeyBtn = document.createElement('button');
+        virtualKeyBtn.textContent = 'Setup Virtual Key';
+        virtualKeyBtn.style.marginTop = '10px';
+        virtualKeyBtn.style.padding = '8px 16px';
+        virtualKeyBtn.style.background = '#3e6ae1';
+        virtualKeyBtn.style.color = 'white';
+        virtualKeyBtn.style.border = 'none';
+        virtualKeyBtn.style.borderRadius = '4px';
+        virtualKeyBtn.style.cursor = 'pointer';
+        virtualKeyBtn.addEventListener('click', () => {
+            window.open('https://tesla.com/_ak/bart-gilt-delta.vercel.app', '_blank');
+        });
+        authInfo.parentElement.appendChild(virtualKeyBtn);
         
         authBtn.addEventListener('click', () => {
             if (confirm('Disconnect your Tesla account?')) {
