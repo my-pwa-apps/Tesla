@@ -10,8 +10,8 @@ const TESLA_OAUTH_CONFIG = {
     // It's stored securely in backend/.env
     
     // Redirect URI - must match exactly what's registered in Tesla Developer Portal
-    // Using GitHub Pages callback temporarily until Vercel callback is accepted by Tesla
-    redirectUri: 'https://my-pwa-apps.github.io/Tesla/callback.html',
+    // Using Vercel callback since Fleet API is registered with bart-gilt-delta.vercel.app
+    redirectUri: 'https://bart-gilt-delta.vercel.app/callback.html',
     authUrl: 'https://auth.tesla.com/oauth2/v3/authorize',
     
     // Use backend proxy for token exchange (avoids CORS and keeps secret secure)
