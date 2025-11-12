@@ -407,7 +407,8 @@ function initiateOAuthFlow() {
             scope: TESLA_OAUTH_CONFIG.scope,
             state: state,
             code_challenge: codeChallenge,
-            code_challenge_method: 'S256'
+            code_challenge_method: 'S256',
+            audience: 'https://fleet-api.prd.eu.vn.cloud.tesla.com'
         });
         
         // Redirect to Tesla OAuth
