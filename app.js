@@ -225,7 +225,18 @@ window.addEventListener('message', async e => {
 async function loadVehicles() {
     try {
         const r = await authedFetch(`${BACKEND_URL}/api/vehicles`);
-        if (!r.ok) return;
+        if (!r.ok) {
+            const errBody = await r.json().catch(() => ({}));
+            console.error('loadVehicles error', r.status, JSON.stringify(errBody));
+            // 412 = token missing Fleet API audience — must re-authenticate
+            if (r.status === 412) {
+                console.warn('Token lacks Fleet API audience — clearing auth, please reconnect.');
+                AUTH.clear();
+                updateConnectUI('idle');
+                alert('Your session token needs to be refreshed.\nPlease click "Connect Tesla" again to re-authenticate.');
+            }
+            return;
+        }
         const data = await r.json();
         const list = data.response || data;
         if (!Array.isArray(list) || !list.length) return;
