@@ -138,8 +138,8 @@ async function initOAuth() {
         const r = await fetch(`${BACKEND_URL}/api/config`);
         const d = await r.json();
         TESLA_OAUTH.clientId   = d.clientId;
-        // Use the backend origin as the redirect_uri (callback.html is served there)
-        TESLA_OAUTH.redirectUri = `${BACKEND_URL}/callback.html`;
+        // Redirect back to callback.html on the same origin the user is browsing from
+        TESLA_OAUTH.redirectUri = new URL('callback.html', window.location.href).href;
     } catch { /* backend unavailable */ }
 }
 
