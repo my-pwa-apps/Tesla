@@ -445,7 +445,7 @@
                     <div class="performance-stats">
                         <div class="perf-main">
                             <div class="speed-display" id="speedDisplay">0</div>
-                            <div class="speed-unit">mph</div>
+                                <div class="speed-unit" id="speedUnit">km/h</div>
                         </div>
                         <div class="range-estimate">
                             <div class="range-label">Estimated Range</div>
@@ -497,7 +497,7 @@
                 <div class="tile-content">
                     <div class="settings-list">
                         <div class="setting-item">
-                            <label for="tempUnit">Temperature Unit</label>
+                            <label for="tempUnit">Temperature</label>
                             <select id="tempUnit" class="setting-select">
                                 <option value="auto">Auto (Location-based)</option>
                                 <option value="celsius">Celsius (&#176;C)</option>
@@ -505,10 +505,17 @@
                             </select>
                         </div>
                         <div class="setting-item">
-                            <label for="distanceUnit">Distance Unit</label>
+                            <label for="distanceUnit">Distance</label>
                             <select id="distanceUnit" class="setting-select">
-                                <option value="miles">Miles</option>
-                                <option value="km">Kilometers</option>
+                                <option value="miles">Miles (mi)</option>
+                                <option value="km">Kilometres (km)</option>
+                            </select>
+                        </div>
+                        <div class="setting-item">
+                            <label for="timeFormat">Time Format</label>
+                            <select id="timeFormat" class="setting-select">
+                                <option value="24h">24-hour (14:30)</option>
+                                <option value="12h">12-hour (2:30 PM)</option>
                             </select>
                         </div>
                         <div class="setting-item">

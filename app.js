@@ -20,8 +20,9 @@ const TESLA_OAUTH = {
 };
 
 const USER_PREFERENCES = {
-    temperatureUnit: localStorage.getItem('temp_unit') || 'celsius',
-    distanceUnit   : localStorage.getItem('dist_unit') || 'km',
+    temperatureUnit: localStorage.getItem('temp_unit')    || 'celsius',
+    distanceUnit   : localStorage.getItem('dist_unit')    || 'km',
+    timeFormat     : localStorage.getItem('time_format')  || '24h',
     userLocation   : null
 };
 
@@ -392,9 +393,11 @@ function formatDistance(km) {
 // ── Clock ──────────────────────────────────────────────────────
 
 function updateTime() {
+    const use12h = USER_PREFERENCES.timeFormat === '12h';
     document.getElementById('currentTime').textContent = new Date().toLocaleString('en-GB', {
         weekday: 'long', year: 'numeric', month: 'long',
-        day: 'numeric', hour: '2-digit', minute: '2-digit'
+        day: 'numeric', hour: '2-digit', minute: '2-digit',
+        hour12: use12h
     });
 }
 updateTime();
@@ -592,6 +595,54 @@ function loadDriveState() {
     }
 }
 
+// ── Performance tile ────────────────────────────────────────
+
+function loadPerformance() {
+    const d       = getTeslaData();
+    const isMiles = USER_PREFERENCES.distanceUnit === 'miles';
+
+    // Speed
+    const rawSpeed = d.speed || 0;  // API value is mph
+    const speed    = isMiles ? rawSpeed : rawSpeed * 1.60934;
+    const speedEl  = document.getElementById('speedDisplay');
+    const unitEl   = document.getElementById('speedUnit');
+    if (speedEl) speedEl.textContent = Math.round(speed);
+    if (unitEl)  unitEl.textContent  = isMiles ? 'mph' : 'km/h';
+
+    // Estimated range from battery tile data
+    const rangeEl  = document.getElementById('rangeEstimate');
+    if (rangeEl) {
+        const rangeKm = (d.battery_range || 0) * 1.60934;
+        rangeEl.textContent = formatDistance(rangeKm);
+    }
+
+    // Power (kW from API, negative = regen)
+    const power    = d.power || 0;
+    const powerEl  = document.getElementById('powerValue');
+    if (powerEl) powerEl.textContent = power !== 0 ? `${power > 0 ? '+' : ''}${power} kW` : '0 kW';
+
+    const barEl = document.getElementById('powerBarFill');
+    if (barEl) {
+        const pct = Math.min(Math.abs(power) / 200 * 100, 100);
+        barEl.style.width      = `${pct}%`;
+        barEl.style.background = power < 0 ? '#22c55e' : 'var(--c-red)';
+    }
+
+    // Trip Computer units — update suffixes to match current unit setting
+    const effEl = document.getElementById('avgEfficiency');
+    if (effEl) {
+        const num = parseFloat(effEl.textContent) || 245;
+        effEl.textContent = `${num} Wh/${isMiles ? 'mi' : 'km'}`;
+    }
+
+    const distEl = document.getElementById('distanceToday');
+    if (distEl) {
+        // Extract stored km value (dataset) and reformat
+        if (!distEl.dataset.km) distEl.dataset.km = '0';
+        distEl.textContent = formatDistance(parseFloat(distEl.dataset.km));
+    }
+}
+
 // Show car's real GPS position on the nav map
 function updateCarLocationOnMap(lat, lon, heading) {
     if (!NAV.map) return;
@@ -645,6 +696,7 @@ function renderAllTiles() {
     loadTeslaVehicleInfo();
     loadDriveState();
     updateControlsUI();
+    loadPerformance();
 }
 
 // ── Charging Stations ──────────────────────────────────────────
@@ -1158,7 +1210,18 @@ function setupSettings() {
     });
 
     distSel.addEventListener('change', e => {
-        USER_PREFERENCES.distanceUnit = e.target.value;
+        loadPerformance();
+    });
+
+    const timeSel = document.getElementById('timeFormat');
+    if (timeSel) {
+        timeSel.value = USER_PREFERENCES.timeFormat;
+        timeSel.addEventListener('change', e => {
+            USER_PREFERENCES.timeFormat = e.target.value;
+            localStorage.setItem('time_format', e.target.value);
+            updateTime();
+        });
+    } USER_PREFERENCES.distanceUnit = e.target.value;
         localStorage.setItem('dist_unit', e.target.value);
         loadTeslaBattery();
         loadDriveState();
