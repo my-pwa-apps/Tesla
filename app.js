@@ -299,10 +299,11 @@ function flattenVehicleData(v) {
         charger_power       : cs.charger_power        || 0,
         charger_voltage     : cs.charger_voltage      || 0,
         // climate_state
-        inside_temp         : cl.inside_temp,
-        outside_temp        : cl.outside_temp,
-        is_climate_on       : cl.is_climate_on,
-        is_preconditioning  : cl.is_preconditioning,
+        inside_temp              : cl.inside_temp,
+        outside_temp             : cl.outside_temp,
+        is_climate_on            : cl.is_climate_on,
+        is_auto_conditioning_on  : cl.is_auto_conditioning_on,
+        is_preconditioning       : cl.is_preconditioning,
         driver_temp_setting : cl.driver_temp_setting,
         fan_status          : cl.fan_status           || 0,
         // drive_state
@@ -457,9 +458,8 @@ function loadTeslaBattery() {
 
     const lvl = d.battery_level ?? 0;
     document.getElementById('batteryLevel').textContent  = `${lvl}%`;
-    document.getElementById('batteryRange').textContent  = formatDistance(
-        (d.battery_range || 0) * (USER_PREFERENCES.distanceUnit === 'miles' ? 1 : 1.60934)
-    );
+    // battery_range from API is always in miles; convert to km for formatDistance
+    document.getElementById('batteryRange').textContent = formatDistance((d.battery_range || 0) * 1.60934);
     document.getElementById('chargingStatus').textContent = d.charging_state || '--';
 
     const fill = document.querySelector('.battery-bar-fill');
@@ -469,7 +469,8 @@ function loadTeslaBattery() {
     // Extra charge details — show when connected or actively charging
     const chargeEl = document.getElementById('chargeDetails');
     if (chargeEl) {
-        const showDetails = LIVE_DATA || d.charging_state === 'Charging';
+        // Show charge details only when a charger is actually connected
+        const showDetails = d.charging_state && d.charging_state !== 'Disconnected';
         chargeEl.classList.toggle('hidden', !showDetails);
 
         const charger_kw   = d.charger_power || 0;
@@ -582,9 +583,12 @@ function loadDriveState() {
 
     el.classList.toggle('hidden', !isDriving && !LIVE_DATA);
 
-    document.getElementById('driveSpeed').textContent = isDriving
-        ? formatDistance(speed * 1.60934).replace(' km', '').replace(' mi', '') + (USER_PREFERENCES.distanceUnit === 'miles' ? ' mph' : ' km/h')
-        : '0';
+    // speed from API is mph; convert to display unit
+    const displaySpeed = USER_PREFERENCES.distanceUnit === 'miles'
+        ? Math.round(speed)
+        : Math.round(speed * 1.60934);
+    const speedSuffix = USER_PREFERENCES.distanceUnit === 'miles' ? ' mph' : ' km/h';
+    document.getElementById('driveSpeed').textContent = isDriving ? `${displaySpeed}${speedSuffix}` : '0';
     document.getElementById('driveGear').textContent  = gear || 'P';
     document.getElementById('drivePower').textContent = power !== 0
         ? `${power > 0 ? '+' : ''}${power} kW`
@@ -673,20 +677,20 @@ async function loadAllTeslaData(forceDemo = false) {
             renderAllTiles();
 
             try {
-                showToast('Waking vehicle\u2026', 8000);
-                const wr = await authedFetch(
+                showToast('Waking vehicle\u2026', 35000);(
                     `${BACKEND_URL}/api/vehicles/${vid}/wake_up`, { method: 'POST' }
                 );
                 const wj = await wr.json().catch(() => ({}));
                 // wj.online === true  → backend confirmed online
                 // wj.online === false → timed out; still try vehicle_data
                 if (!wr.ok && !wj.online && wj.online !== false) {
-                    // Real failure (auth issue, etc.)
+                    dismissToast();
                     showToast('Could not reach vehicle');
                     return;
                 }
             } catch { /* network error: still try vehicle_data */ }
 
+            dismissToast();
             const raw = await fetchLiveData();
             if (raw) {
                 LIVE_DATA = flattenVehicleData(raw);
@@ -767,10 +771,16 @@ function getChargerPrefs() {
 function saveChargerPrefs(prefs) { localStorage.setItem('charger_prefs', JSON.stringify(prefs)); }
 function matchesPref(network) {
     const prefs = getChargerPrefs();
-    const n = network.toLowerCase();
-    if (/tesla|supercharger/i.test(n)) return prefs.includes('supercharger');
-    if (/fastned/i.test(n))            return prefs.includes('fastned');
+    if (/tesla|supercharger/i.test(network)) return prefs.includes('supercharger');
+    if (/fastned/i.test(network))            return prefs.includes('fastned');
     return prefs.includes('other');
+}
+
+// Returns { cls, label } badge info for a charger network string
+function chargerBadge(network) {
+    if (/tesla|supercharger/i.test(network)) return { cls: 'badge-tesla',   label: 'Supercharger' };
+    if (/fastned/i.test(network))            return { cls: 'badge-fastned', label: 'Fastned' };
+    return { cls: 'badge-other', label: network || 'Charger' };
 }
 
 async function preconditionBattery() {
@@ -779,16 +789,24 @@ async function preconditionBattery() {
 }
 
 function showToast(msg, duration = 3500) {
-    let t = document.getElementById('appToast');
-    if (!t) {
-        t = document.createElement('div');
-        t.id = 'appToast';
-        document.body.appendChild(t);
+    let toast = document.getElementById('appToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'appToast';
+        document.body.appendChild(toast);
     }
-    t.textContent = msg;
-    t.classList.add('toast-visible');
-    clearTimeout(t._timer);
-    t._timer = setTimeout(() => t.classList.remove('toast-visible'), duration);
+    toast.textContent = msg;
+    toast.classList.add('toast-visible');
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => toast.classList.remove('toast-visible'), duration);
+}
+
+function dismissToast() {
+    const toast = document.getElementById('appToast');
+    if (toast) {
+        clearTimeout(toast._timer);
+        toast.classList.remove('toast-visible');
+    }
 }
 
 async function navigateToCharger(lat, lon, name) {
@@ -830,10 +848,7 @@ async function findChargers() {
             info.innerHTML = `<p class="charger-empty">${t('no_chargers')}</p>`;
         } else {
             stations.slice(0, 12).forEach(s => {
-                const isTesla   = /tesla|supercharger/i.test(s.network);
-                const isFastned = /fastned/i.test(s.network);
-                const badgeClass = isTesla ? 'badge-tesla' : isFastned ? 'badge-fastned' : 'badge-other';
-                const badgeLabel = isTesla ? 'Supercharger' : isFastned ? 'Fastned' : (s.network || 'Charger');
+                const { cls: badgeClass, label: badgeLabel } = chargerBadge(s.network);
 
                 const el = document.createElement('div');
                 el.className = 'charger-item';
@@ -1230,9 +1245,10 @@ function setupSettings() {
     distSel.addEventListener('change', e => {
         USER_PREFERENCES.distanceUnit = e.target.value;
         localStorage.setItem('dist_unit', e.target.value);
-        loadPerformance();
         loadTeslaBattery();
+        loadTeslaVehicleInfo();
         loadDriveState();
+        loadPerformance();
     });
 
     const timeSel = document.getElementById('timeFormat');
@@ -1286,11 +1302,9 @@ function updateControlsUI() {
     climateBtn.textContent = `${t('ctrl_climate')}: ${on ? 'ON' : 'OFF'}`;
     climateBtn.classList.toggle('ctrl-active', !!on);
 
-    const temp  = LIVE_DATA.driver_temp_setting ?? LIVE_DATA.inside_temp ?? 21;
-    _ctrlTemp   = parseFloat(temp);
-    const unit  = USER_PREFERENCES.temperatureUnit === 'fahrenheit' ? 'F' : 'C';
-    const disp  = unit === 'F' ? Math.round(_ctrlTemp * 9 / 5 + 32) : _ctrlTemp.toFixed(1);
-    document.getElementById('ctrlTempDisplay').textContent = `${disp}°${unit}`;
+    const temp = LIVE_DATA.driver_temp_setting ?? LIVE_DATA.inside_temp ?? 21;
+    _ctrlTemp  = parseFloat(temp);
+    document.getElementById('ctrlTempDisplay').textContent = formatTemperature(_ctrlTemp);
 
     const limit = LIVE_DATA.charge_limit_soc ?? 80;
     document.getElementById('ctrlChargeSlider').value = limit;
@@ -1336,9 +1350,7 @@ function setupControls() {
 
     function adjustTemp(delta) {
         _ctrlTemp = Math.max(15, Math.min(30, _ctrlTemp + delta));
-        const unit = USER_PREFERENCES.temperatureUnit === 'fahrenheit' ? 'F' : 'C';
-        const disp = unit === 'F' ? Math.round(_ctrlTemp * 9 / 5 + 32) : _ctrlTemp.toFixed(1);
-        document.getElementById('ctrlTempDisplay').textContent = `${disp}°${unit}`;
+        document.getElementById('ctrlTempDisplay').textContent = formatTemperature(_ctrlTemp);
     }
 
     tempDownBtn.addEventListener('click', () => adjustTemp(-0.5));
@@ -1352,13 +1364,7 @@ function setupControls() {
         ['mouseup', 'mouseleave', 'touchend'].forEach(ev => btn.addEventListener(ev, () => {
             clearInterval(_tempTimer);
             sendCarCommand('set_temps', { driver_temp: _ctrlTemp, passenger_temp: _ctrlTemp })
-                .then(r => {
-                    if (r.ok) {
-                        const unit = USER_PREFERENCES.temperatureUnit === 'fahrenheit' ? 'F' : 'C';
-                        const disp = unit === 'F' ? Math.round(_ctrlTemp * 9 / 5 + 32) : _ctrlTemp.toFixed(1);
-                        showToast(t('temp_set', { val: `${disp}°${unit}` }));
-                    }
-                });
+                .then(r => { if (r.ok) showToast(t('temp_set', { val: formatTemperature(_ctrlTemp) })); });
         }));
     });
 
@@ -1435,9 +1441,8 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
     const body = document.getElementById('chargeRecBody');
     if (!card || !body) return;
 
-    const rangeKm = LIVE_DATA
-        ? (LIVE_DATA.battery_range_km ?? (LIVE_DATA.battery_range ? LIVE_DATA.battery_range * 1.60934 : null))
-        : null;
+    // battery_range is always miles from API; convert to km for distance comparison
+    const rangeKm = LIVE_DATA?.battery_range ? LIVE_DATA.battery_range * 1.60934 : null;
     const buffer = 1.15;
 
     if (!rangeKm || rangeKm >= routeDistanceKm * buffer) {
@@ -1466,16 +1471,12 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
         stations = [...mid, ...near];
     } catch { card.classList.add('hidden'); return; }
 
-    const prefs = getChargerPrefs();
-    const seen  = new Set();
+    const seen = new Set();
     const filtered = stations.filter(s => {
         const key = `${s.lat.toFixed(4)},${s.lon.toFixed(4)}`;
         if (seen.has(key)) return false;
         seen.add(key);
-        const n = (s.network || '').toLowerCase();
-        if (/tesla/i.test(n))   return prefs.includes('supercharger');
-        if (/fastned/i.test(n)) return prefs.includes('fastned');
-        return prefs.includes('other');
+        return matchesPref(s.network);
     });
 
     filtered.forEach(s => { s.dist = haversineKm(userLat, userLon, s.lat, s.lon); });
@@ -1488,10 +1489,7 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
     body.innerHTML = `<div class="rec-info">Range ~${Math.round(rangeKm)} km · Trip needs ~${Math.round(routeDistanceKm * buffer)} km (${t('charge_short', { shortfall })}):</div>`;
 
     top.forEach(s => {
-        const isTesla   = /tesla/i.test(s.network);
-        const isFastned = /fastned/i.test(s.network);
-        const badgeClass = isTesla ? 'badge-tesla' : isFastned ? 'badge-fastned' : 'badge-other';
-        const badgeLabel = isTesla ? 'Supercharger' : isFastned ? 'Fastned' : (s.network || 'Charger');
+        const { cls: badgeClass, label: badgeLabel } = chargerBadge(s.network);
 
         const el = document.createElement('div');
         el.className = 'rec-item';
