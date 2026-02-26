@@ -23,6 +23,7 @@ const USER_PREFERENCES = {
     temperatureUnit: localStorage.getItem('temp_unit')    || 'celsius',
     distanceUnit   : localStorage.getItem('dist_unit')    || 'km',
     timeFormat     : localStorage.getItem('time_format')  || '24h',
+    uiLanguage     : localStorage.getItem('ui_lang')      || 'en',
     userLocation   : null
 };
 
@@ -355,7 +356,7 @@ function updateConnectUI(state) {
                 <path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
                 <line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/>
             </svg>
-            Connect Tesla`;
+            ${t('connect_tesla')}`;
         btn.classList.remove('is-connected');
         btn.onclick = connectTesla;
     }
@@ -731,7 +732,7 @@ out center;`;
 
 async function sendCarCommand(command, params = {}) {
     const id = localStorage.getItem('tesla_vehicle_id');
-    if (!id || !AUTH.isLoggedIn()) { showToast('Connect Tesla to use car controls'); return { ok: false }; }
+    if (!id || !AUTH.isLoggedIn()) { showToast(t('connect_first')); return { ok: false }; }
     try {
         const r = await authedFetch(`${BACKEND_URL}/api/vehicles/${id}/command`, {
             method : 'POST',
@@ -783,16 +784,16 @@ async function navigateToCharger(lat, lon, name) {
     // Trigger battery preconditioning
     if (AUTH.isLoggedIn()) {
         const ok = await preconditionBattery();
-        showToast(ok ? `Navigating to ${name} · Battery preconditioning started` : `Navigating to ${name}`);
+        showToast(ok ? `${name} · ${t('precond_started')}` : name);
     } else {
-        showToast(`Navigating to ${name}`);
+        showToast(name);
     }
 }
 
 async function findChargers() {
     const btn  = document.getElementById('findChargersBtn');
     const info = document.getElementById('chargingInfo');
-    btn.textContent = 'Finding...';
+    btn.textContent = t('finding');
     btn.disabled    = true;
 
     try {
@@ -809,7 +810,7 @@ async function findChargers() {
         info.innerHTML = '';
 
         if (!stations.length) {
-            info.innerHTML = '<p class="charger-empty">No Supercharger or Fastned found within 30 km</p>';
+            info.innerHTML = `<p class="charger-empty">${t('no_chargers')}</p>`;;
         } else {
             stations.slice(0, 12).forEach(s => {
                 const isTesla   = /tesla/i.test(s.network);
@@ -829,19 +830,19 @@ async function findChargers() {
                 `;
                 const navBtn = document.createElement('button');
                 navBtn.className = 'charger-nav-btn';
-                navBtn.textContent = 'Navigate + Precondition';
+                navBtn.textContent = t('nav_precondition');
                 navBtn.addEventListener('click', () => navigateToCharger(s.lat, s.lon, s.name));
                 el.appendChild(navBtn);
                 info.appendChild(el);
             });
         }
 
-        btn.textContent = 'Refresh';
+        btn.textContent = t('refresh');
         btn.disabled    = false;
     } catch (e) {
-        info.innerHTML = `<p class="charger-empty">${e.code === 1 ? 'Enable location services to find chargers' : 'Could not load chargers'}</p>`;
+        info.innerHTML = `<p class="charger-empty">${e.code === 1 ? t('chargers_no_loc') : t('chargers_error')}</p>`;
         info.classList.remove('hidden');
-        btn.textContent = 'Find Chargers';
+        btn.textContent = t('find_chargers');
         btn.disabled    = false;
     }
 }
@@ -898,7 +899,7 @@ function initNavMap() {
             if (NAV.userMarker) NAV.map.removeLayer(NAV.userMarker);
             NAV.userMarker = L.marker([lat, lng], { icon: userIcon() })
                 .addTo(NAV.map)
-                .bindTooltip('You are here', { direction: 'top', offset: [0, -8] });
+                .bindTooltip(t('you_are_here'), { direction: 'top', offset: [0, -8] });
         }, () => {});
     }
 
@@ -910,7 +911,7 @@ async function searchDestination(query) {
     if (!q) return;
 
     const resultsEl = document.getElementById('navResults');
-    resultsEl.innerHTML = '<div class="nav-result-loading">Searching...</div>';
+    resultsEl.innerHTML = `<div class="nav-result-loading">${t('searching')}</div>`;
 
     try {
         const resp = await fetch(
@@ -922,7 +923,7 @@ async function searchDestination(query) {
         resultsEl.innerHTML = '';
 
         if (!data.length) {
-            resultsEl.innerHTML = '<p class="no-results">No results found</p>';
+            resultsEl.innerHTML = `<p class="no-results">${t('no_results')}</p>`;
             return;
         }
 
@@ -943,7 +944,7 @@ async function searchDestination(query) {
             resultsEl.appendChild(el);
         });
     } catch {
-        resultsEl.innerHTML = '<p class="error">Search unavailable</p>';
+        resultsEl.innerHTML = `<p class="error">${t('search_unavailable')}</p>`;
     }
 }
 
@@ -1035,16 +1036,16 @@ function saveLocation(dest) {
     const saved = getSaved();
     if (saved.find(s => s.lat === dest.lat && s.lon === dest.lon)) {
         const btn = document.getElementById('saveToFavBtn');
-        btn.textContent = 'Already saved';
-        setTimeout(() => btn.textContent = 'Save to Favourites', 2000);
+        btn.textContent = t('already_saved');
+        setTimeout(() => btn.textContent = t('nav_save_fav'), 2000);
         return;
     }
     saved.unshift({ ...dest, id: Date.now() });
     localStorage.setItem('nav_saved', JSON.stringify(saved.slice(0, 30)));
     renderSaved();
     const btn = document.getElementById('saveToFavBtn');
-    btn.textContent = 'Saved!';
-    setTimeout(() => btn.textContent = 'Save to Favourites', 2000);
+    btn.textContent = t('saved');
+    setTimeout(() => btn.textContent = t('nav_save_fav'), 2000);
 }
 
 function deleteSaved(id) {
@@ -1085,7 +1086,7 @@ function renderSaved() {
                 <div class="nav-list-sub">${s.address.split(', ').slice(1, 3).join(', ')}</div>
             </div>
             <div class="nav-list-actions">
-                <button class="nav-list-btn go-btn"  onclick="navGoTo('${destAttr(s)}')">Go</button>
+                <button class="nav-list-btn go-btn"  onclick="navGoTo('${destAttr(s)}')">${t('go')}</button>
                 <button class="nav-list-btn del-btn" onclick="navDelete(${s.id})">&#215;</button>
             </div>
         </div>`).join('');
@@ -1104,8 +1105,8 @@ function renderRecent() {
                 <div class="nav-list-sub">${r.address.split(', ').slice(1, 3).join(', ')}</div>
             </div>
             <div class="nav-list-actions">
-                <button class="nav-list-btn go-btn"   onclick="navGoTo('${destAttr(r)}')">Go</button>
-                <button class="nav-list-btn save-btn" onclick="navSave('${destAttr(r)}')">Save</button>
+                <button class="nav-list-btn go-btn"   onclick="navGoTo('${destAttr(r)}')">${t('go')}</button>
+                <button class="nav-list-btn save-btn" onclick="navSave('${destAttr(r)}')">${t('save_btn')}</button>
             </div>
         </div>`).join('');
 }
@@ -1175,7 +1176,7 @@ function handleQuickDestination(dest) {
 
     navigator.geolocation.getCurrentPosition(async pos => {
         const { latitude: lat, longitude: lon } = pos.coords;
-        showToast('Searching for nearest ' + (dest === 'supercharger' ? 'Supercharger' : 'Fastned') + '…');
+        showToast(t('searching'));
         try {
             const stations = await fetchNearbyChargers(lat, lon, 50);
             const filtered = stations.filter(s => new RegExp(networkPattern, 'i').test(s.network));
@@ -1184,12 +1185,12 @@ function handleQuickDestination(dest) {
             if (filtered.length) {
                 await navigateToCharger(filtered[0].lat, filtered[0].lon, filtered[0].name);
             } else {
-                showToast('None found within 50 km');
+                showToast(t('none_found_50km'));
             }
         } catch {
-            showToast('Could not find chargers');
+            showToast(t('chargers_error'));
         }
-    }, () => showToast('Enable location services'), { timeout: 8000 });
+    }, () => showToast(t('enable_location')), { timeout: 8000 });
 }
 
 // ── Settings ───────────────────────────────────────────────────
@@ -1210,7 +1211,11 @@ function setupSettings() {
     });
 
     distSel.addEventListener('change', e => {
+        USER_PREFERENCES.distanceUnit = e.target.value;
+        localStorage.setItem('dist_unit', e.target.value);
         loadPerformance();
+        loadTeslaBattery();
+        loadDriveState();
     });
 
     const timeSel = document.getElementById('timeFormat');
@@ -1221,14 +1226,20 @@ function setupSettings() {
             localStorage.setItem('time_format', e.target.value);
             updateTime();
         });
-    } USER_PREFERENCES.distanceUnit = e.target.value;
-        localStorage.setItem('dist_unit', e.target.value);
-        loadTeslaBattery();
-        loadDriveState();
-    });
+    }
+
+    const langSel = document.getElementById('uiLanguage');
+    if (langSel) {
+        langSel.value = USER_PREFERENCES.uiLanguage;
+        langSel.addEventListener('change', e => {
+            USER_PREFERENCES.uiLanguage = e.target.value;
+            localStorage.setItem('ui_lang', e.target.value);
+            applyLanguage(e.target.value);
+        });
+    }
 
     refreshBtn.addEventListener('click', async () => {
-        refreshBtn.textContent = 'Refreshing…';
+        refreshBtn.textContent = t('refreshing');
         refreshBtn.disabled    = true;
         if (AUTH.isLoggedIn()) {
             const raw = await fetchLiveData();
@@ -1236,7 +1247,7 @@ function setupSettings() {
         }
         loadWeather();
         renderAllTiles();
-        setTimeout(() => { refreshBtn.textContent = 'Refresh All Data'; refreshBtn.disabled = false; }, 1500);
+        setTimeout(() => { refreshBtn.textContent = t('refresh_data'); refreshBtn.disabled = false; }, 1500);
     });
 }
 
@@ -1249,13 +1260,13 @@ function updateControlsUI() {
     if (!climateBtn) return;
 
     if (!AUTH.isLoggedIn() || !LIVE_DATA) {
-        climateBtn.textContent = 'Climate: ---';
+        climateBtn.textContent = `${t('ctrl_climate')}: ---`;
         document.getElementById('ctrlTempDisplay').textContent = '---';
         return;
     }
 
     const on = LIVE_DATA.is_climate_on || LIVE_DATA.is_auto_conditioning_on;
-    climateBtn.textContent = `Climate: ${on ? 'ON' : 'OFF'}`;
+    climateBtn.textContent = `${t('ctrl_climate')}: ${on ? 'ON' : 'OFF'}`;
     climateBtn.classList.toggle('ctrl-active', !!on);
 
     const temp  = LIVE_DATA.driver_temp_setting ?? LIVE_DATA.inside_temp ?? 21;
@@ -1287,7 +1298,7 @@ function setupControls() {
         btn.disabled = true;
         btn.textContent = '…';
         const res = await sendCarCommand(command, params);
-        showToast(res.ok ? successMsg : (res.error || 'Command failed'));
+        showToast(res.ok ? successMsg : (res.error || t('cmd_failed')));
         btn.textContent = orig;
         btn.disabled = false;
         if (res.ok) {
@@ -1298,12 +1309,12 @@ function setupControls() {
 
     climateBtn.addEventListener('click', async () => {
         const on = climateBtn.classList.contains('ctrl-active');
-        await runCmd(climateBtn, on ? 'auto_conditioning_stop' : 'auto_conditioning_start', {}, on ? 'Climate off' : 'Climate on');
+        await runCmd(climateBtn, on ? 'auto_conditioning_stop' : 'auto_conditioning_start', {}, on ? t('climate_off') : t('climate_on'));
     });
 
     precondBtn.addEventListener('click', async () => {
         const ok = await preconditionBattery();
-        showToast(ok ? 'Battery preconditioning started' : 'Could not precondition');
+        showToast(ok ? t('precond_started') : t('precond_failed'));
     });
 
     function adjustTemp(delta) {
@@ -1324,7 +1335,13 @@ function setupControls() {
         ['mouseup', 'mouseleave', 'touchend'].forEach(ev => btn.addEventListener(ev, () => {
             clearInterval(_tempTimer);
             sendCarCommand('set_temps', { driver_temp: _ctrlTemp, passenger_temp: _ctrlTemp })
-                .then(r => { if (r.ok) showToast(`Temperature set to ${_ctrlTemp.toFixed(1)}°C`); });
+                .then(r => {
+                    if (r.ok) {
+                        const unit = USER_PREFERENCES.temperatureUnit === 'fahrenheit' ? 'F' : 'C';
+                        const disp = unit === 'F' ? Math.round(_ctrlTemp * 9 / 5 + 32) : _ctrlTemp.toFixed(1);
+                        showToast(t('temp_set', { val: `${disp}°${unit}` }));
+                    }
+                });
         }));
     });
 
@@ -1332,13 +1349,13 @@ function setupControls() {
         chargeVal.textContent = `${chargeSlider.value}%`;
     });
     chargeSet.addEventListener('click', () => {
-        runCmd(chargeSet, 'set_charge_limit', { percent: parseInt(chargeSlider.value) }, `Charge limit set to ${chargeSlider.value}%`);
+        runCmd(chargeSet, 'set_charge_limit', { percent: parseInt(chargeSlider.value) }, `${t('ctrl_charge_limit')}: ${chargeSlider.value}%`);
     });
 
-    lockBtn.addEventListener('click',   () => runCmd(lockBtn,   'door_lock',    {}, 'Car locked'));
-    unlockBtn.addEventListener('click', () => runCmd(unlockBtn, 'door_unlock',  {}, 'Car unlocked'));
-    flashBtn.addEventListener('click',  () => runCmd(flashBtn,  'flash_lights', {}, 'Lights flashed'));
-    honkBtn.addEventListener('click',   () => runCmd(honkBtn,   'honk_horn',    {}, 'Honked!'));
+    lockBtn.addEventListener('click',   () => runCmd(lockBtn,   'door_lock',    {}, t('car_locked')));
+    unlockBtn.addEventListener('click', () => runCmd(unlockBtn, 'door_unlock',  {}, t('car_unlocked')));
+    flashBtn.addEventListener('click',  () => runCmd(flashBtn,  'flash_lights', {}, t('lights_flashed')));
+    honkBtn.addEventListener('click',   () => runCmd(honkBtn,   'honk_horn',    {}, t('honked')));
 
     // Firmware update buttons
     const checkFwBtn  = document.getElementById('checkFwBtn');
@@ -1346,7 +1363,7 @@ function setupControls() {
 
     if (checkFwBtn) {
         checkFwBtn.addEventListener('click', async () => {
-            checkFwBtn.textContent = 'Checking…';
+            checkFwBtn.textContent = t('checking');
             checkFwBtn.disabled = true;
             const raw = await fetchLiveData();
             if (raw) {
@@ -1354,25 +1371,25 @@ function setupControls() {
                 loadTeslaVehicleInfo();
                 const su = LIVE_DATA.software_update;
                 if (!su || !su.status || su.status === '') {
-                    showToast('Software is up to date ✓');
+                    showToast(t('up_to_date'));
                 } else {
                     showToast(`Update status: ${su.status}${su.version ? ' — v' + su.version : ''}`);
                 }
             } else {
-                showToast('Could not reach vehicle');
+                showToast(t('vehicle_unreachable'));
             }
-            checkFwBtn.textContent = 'Check for Updates';
+            checkFwBtn.textContent = t('check_updates');
             checkFwBtn.disabled = false;
         });
     }
 
     if (fwInstallBtn) {
         fwInstallBtn.addEventListener('click', async () => {
-            fwInstallBtn.textContent = 'Scheduling…';
+            fwInstallBtn.textContent = t('scheduling');
             fwInstallBtn.disabled = true;
             const res = await sendCarCommand('schedule_software_update', { offset_sec: 0 });
-            showToast(res.ok ? 'Software update scheduled!' : (res.error || 'Could not schedule update'));
-            fwInstallBtn.textContent = 'Install Now';
+            showToast(res.ok ? t('update_scheduled') : (res.error || t('cmd_failed')));
+            fwInstallBtn.textContent = t('install_now');
             fwInstallBtn.disabled = false;
         });
     }
@@ -1451,7 +1468,7 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
     if (!top.length) { card.classList.add('hidden'); return; }
 
     const shortfall = Math.round(routeDistanceKm * buffer - rangeKm);
-    body.innerHTML = `<div class="rec-info">Range ~${Math.round(rangeKm)} km · Trip needs ~${Math.round(routeDistanceKm * buffer)} km (${shortfall} km short):</div>`;
+    body.innerHTML = `<div class="rec-info">Range ~${Math.round(rangeKm)} km · Trip needs ~${Math.round(routeDistanceKm * buffer)} km (${t('charge_short', { shortfall })}):</div>`;
 
     top.forEach(s => {
         const isTesla   = /tesla/i.test(s.network);
@@ -1470,7 +1487,7 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
         `;
         const navBtn = document.createElement('button');
         navBtn.className = 'charger-nav-btn';
-        navBtn.textContent = 'Navigate + Precondition';
+        navBtn.textContent = t('nav_precondition');
         navBtn.addEventListener('click', () => navigateToCharger(s.lat, s.lon, s.name));
         el.appendChild(navBtn);
         body.appendChild(el);
@@ -1482,6 +1499,9 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
 // ── Init ───────────────────────────────────────────────────────
 
 async function init() {
+    // Apply saved language before rendering anything
+    applyLanguage(USER_PREFERENCES.uiLanguage);
+
     // Restore auth state
     if (AUTH.isLoggedIn()) {
         if (AUTH.isExpired()) await AUTH.refresh();
