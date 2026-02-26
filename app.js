@@ -667,27 +667,36 @@ function carIcon(heading) {
 
 async function loadAllTeslaData(forceDemo = false) {
     if (!forceDemo && AUTH.isLoggedIn()) {
-        // Try to wake & fetch live data
         const vid = AUTH.getVehicleId();
         if (vid) {
-            try {
-                // Wake up if needed (fire-and-forget, then fetch)
-                authedFetch(`${BACKEND_URL}/api/vehicles/${vid}/wake_up`, { method: 'POST' })
-                    .catch(() => {});
-            } catch { /* ignore */ }
+            // Render immediately with demo/cached data while we wake the car
+            renderAllTiles();
 
-            // Give it a second to wake, then fetch
-            setTimeout(async () => {
-                const raw = await fetchLiveData();
-                if (raw) {
-                    LIVE_DATA = flattenVehicleData(raw);
-                    renderAllTiles();
+            try {
+                showToast('Waking vehicle\u2026', 8000);
+                const wr = await authedFetch(
+                    `${BACKEND_URL}/api/vehicles/${vid}/wake_up`, { method: 'POST' }
+                );
+                const wj = await wr.json().catch(() => ({}));
+                // wj.online === true  → backend confirmed online
+                // wj.online === false → timed out; still try vehicle_data
+                if (!wr.ok && !wj.online && wj.online !== false) {
+                    // Real failure (auth issue, etc.)
+                    showToast('Could not reach vehicle');
+                    return;
                 }
-            }, 2500);
+            } catch { /* network error: still try vehicle_data */ }
+
+            const raw = await fetchLiveData();
+            if (raw) {
+                LIVE_DATA = flattenVehicleData(raw);
+                renderAllTiles();
+            }
+            return;
         }
     }
 
-    // Render with whatever data is available (live or mock)
+    // Not logged in or no vehicle ID — render with demo data
     renderAllTiles();
 }
 

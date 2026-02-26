@@ -36,12 +36,19 @@ const TESLA = {
     fleetApiBase : 'https://fleet-api.prd.eu.vn.cloud.tesla.com/api/1'
 };
 
+// ── Safe JSON parse (returns null if body is not JSON) ──────────────────────
+async function safeJson(r) {
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) return { error: `Non-JSON response (${r.status})` };
+    try { return await r.json(); } catch { return { error: 'JSON parse error' }; }
+}
+
 // ── Helper: proxy a Fleet API GET ─────────────────────────────────────────────
 async function fleetGet(path, token) {
     const r = await fetch(`${TESLA.fleetApiBase}${path}`, {
         headers: { Authorization: `Bearer ${token}` }
     });
-    return { status: r.status, body: await r.json() };
+    return { status: r.status, body: await safeJson(r) };
 }
 
 // ── Helper: proxy a Fleet API POST ────────────────────────────────────────────
@@ -51,7 +58,7 @@ async function fleetPost(path, token, payload = {}) {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body   : JSON.stringify(payload)
     });
-    return { status: r.status, body: await r.json() };
+    return { status: r.status, body: await safeJson(r) };
 }
 
 // ── Extract bearer token from request ────────────────────────────────────────
@@ -168,16 +175,31 @@ app.get('/api/vehicles/:id/vehicle_data', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// VEHICLES: wake up
+// VEHICLES: wake up (with polling until online, max ~30 s)
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/vehicles/:id/wake_up', async (req, res) => {
     const token = bearerToken(req);
     if (!token) return res.status(401).json({ error: 'No access token' });
     try {
-        const { status, body } = await fleetPost(`/vehicles/${req.params.id}/wake_up`, token);
-        res.status(status).json(body);
+        // Send the initial wake command
+        await fleetPost(`/vehicles/${req.params.id}/wake_up`, token);
+
+        // Poll vehicle state until 'online' (max 12 attempts × 2.5 s = 30 s)
+        const delay = ms => new Promise(ok => setTimeout(ok, ms));
+        for (let i = 0; i < 12; i++) {
+            await delay(2500);
+            const { status, body } = await fleetGet(`/vehicles/${req.params.id}`, token);
+            const state = body?.response?.state;
+            if (state === 'online') {
+                return res.json({ online: true, state });
+            }
+            if (status !== 200) break; // auth error or similar — stop polling
+        }
+        // Timed out but not necessarily an error — caller can still try vehicle_data
+        res.json({ online: false, state: 'asleep' });
     } catch (e) {
-        res.status(500).json({ error: 'Wake up failed' });
+        console.error('wake_up error:', e.message);
+        res.status(500).json({ error: 'Wake up failed', detail: e.message });
     }
 });
 
