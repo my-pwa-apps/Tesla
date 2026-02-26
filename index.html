@@ -189,6 +189,54 @@
                 </div>
             </div>
 
+            <!-- Car Controls Tile -->
+            <div class="tile tesla-tile controls-tile" id="controlsTile">
+                <div class="tile-header">
+                    <span class="tile-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="4" y1="6" x2="20" y2="6"/>
+                            <line x1="4" y1="12" x2="20" y2="12"/>
+                            <line x1="4" y1="18" x2="20" y2="18"/>
+                            <circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/>
+                            <circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/>
+                            <circle cx="10" cy="18" r="2" fill="currentColor" stroke="none"/>
+                        </svg>
+                    </span>
+                    <h2>Car Controls</h2>
+                </div>
+                <div class="tile-content">
+                    <div class="ctrl-section">
+                        <div class="ctrl-section-label">Climate</div>
+                        <div class="ctrl-row">
+                            <button class="ctrl-btn" id="ctrlClimateToggle">Climate: ---</button>
+                            <button class="ctrl-btn" id="ctrlPrecondition">Precondition</button>
+                        </div>
+                        <div class="ctrl-row ctrl-temp-row">
+                            <button class="ctrl-icon-btn" id="ctrlTempDown">&#8722;</button>
+                            <span class="ctrl-temp-val" id="ctrlTempDisplay">---</span>
+                            <button class="ctrl-icon-btn" id="ctrlTempUp">+</button>
+                        </div>
+                    </div>
+                    <div class="ctrl-section">
+                        <div class="ctrl-section-label">Charge Limit</div>
+                        <div class="ctrl-charge-row">
+                            <input type="range" id="ctrlChargeSlider" min="50" max="100" step="5" value="80">
+                            <span id="ctrlChargeVal">80%</span>
+                            <button class="ctrl-btn small" id="ctrlChargeSet">Set</button>
+                        </div>
+                    </div>
+                    <div class="ctrl-section">
+                        <div class="ctrl-section-label">Access</div>
+                        <div class="ctrl-row">
+                            <button class="ctrl-btn" id="ctrlLock">Lock</button>
+                            <button class="ctrl-btn" id="ctrlUnlock">Unlock</button>
+                            <button class="ctrl-btn" id="ctrlFlash">Flash</button>
+                            <button class="ctrl-btn" id="ctrlHonk">Honk</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Weather Tile -->
             <div class="tile weather-tile" id="weatherTile">
                 <div class="tile-header">
@@ -274,6 +322,10 @@
                                     </span>
                                 </div>
                                 <button class="action-btn small" id="saveToFavBtn">Save to Favourites</button>
+                                <div class="charge-rec hidden" id="chargeRec">
+                                    <div class="charge-rec-header">&#9889; Charging Recommended</div>
+                                    <div class="charge-rec-body" id="chargeRecBody"></div>
+                                </div>
                             </div>
 
                             <div class="nav-quick">
@@ -444,6 +496,14 @@
                                 <option value="miles">Miles</option>
                                 <option value="km">Kilometers</option>
                             </select>
+                        </div>
+                        <div class="setting-item">
+                            <label>Charger Networks</label>
+                            <div class="pref-toggle-group" id="chargerPrefGroup">
+                                <button class="pref-toggle active" data-net="supercharger">Supercharger</button>
+                                <button class="pref-toggle active" data-net="fastned">Fastned</button>
+                                <button class="pref-toggle active" data-net="other">Other</button>
+                            </div>
                         </div>
                         <div class="setting-item">
                             <button class="action-btn small" id="refreshAllBtn">Refresh All Data</button>

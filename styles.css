@@ -1467,3 +1467,188 @@ header {
     color: var(--c-text);
 }
 
+/* ── Car Controls Tile ───────────────────────────────────── */
+.controls-tile .tile-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ctrl-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ctrl-section-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--c-text-muted);
+}
+
+.ctrl-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.ctrl-btn {
+    flex: 1;
+    min-width: 70px;
+    padding: 7px 10px;
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    border-radius: 7px;
+    color: var(--c-text);
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition);
+}
+
+.ctrl-btn:hover:not(:disabled) {
+    background: var(--c-surface-3, #2a2a2a);
+    border-color: var(--c-border-hover);
+}
+
+.ctrl-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ctrl-btn.small {
+    flex: 0 0 auto;
+    padding: 5px 10px;
+}
+
+.ctrl-btn.ctrl-active {
+    border-color: #e31937;
+    color: #e31937;
+}
+
+.ctrl-temp-row {
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+}
+
+.ctrl-icon-btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    border-radius: 50%;
+    color: var(--c-text);
+    font-size: 1.2rem;
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--transition);
+}
+
+.ctrl-icon-btn:hover { background: var(--c-surface-3, #2a2a2a); }
+
+.ctrl-temp-val {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--c-text);
+    min-width: 56px;
+    text-align: center;
+}
+
+.ctrl-charge-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ctrl-charge-row input[type="range"] {
+    flex: 1;
+    accent-color: #e31937;
+}
+
+#ctrlChargeVal {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--c-text);
+    min-width: 34px;
+    text-align: right;
+}
+
+/* ── Charger Network Preferences ─────────────────────────── */
+.pref-toggle-group {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+
+.pref-toggle {
+    padding: 5px 11px;
+    border: 1px solid var(--c-border);
+    border-radius: 20px;
+    background: transparent;
+    color: var(--c-text-muted);
+    font-size: 0.75rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.pref-toggle.active {
+    background: rgba(227, 25, 55, 0.12);
+    border-color: #e31937;
+    color: #e31937;
+}
+
+/* ── Charge Route Recommendation Card ────────────────────── */
+.charge-rec {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: rgba(227, 25, 55, 0.06);
+    border: 1px solid rgba(227, 25, 55, 0.35);
+    border-radius: 8px;
+}
+
+.charge-rec-header {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #e31937;
+    margin-bottom: 8px;
+}
+
+.rec-info {
+    font-size: 0.73rem;
+    color: var(--c-text-muted);
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+.rec-item {
+    padding: 8px 0;
+    border-top: 1px solid var(--c-border);
+}
+
+.rec-item:first-child {
+    border-top: none;
+}
+
+.rec-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 3px;
+}
+
+.rec-item-name {
+    font-size: 0.8rem;
+    color: var(--c-text);
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

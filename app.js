@@ -627,6 +627,7 @@ function renderAllTiles() {
     loadTeslaClimate();
     loadTeslaVehicleInfo();
     loadDriveState();
+    updateControlsUI();
 }
 
 // ── Charging Stations ──────────────────────────────────────────
@@ -659,17 +660,36 @@ out center;`;
     })).filter(s => s.lat && s.lon);
 }
 
-async function preconditionBattery() {
-    const id = AUTH.getVehicleId ? AUTH.getVehicleId() : localStorage.getItem('tesla_vehicle_id');
-    if (!id || !AUTH.isLoggedIn()) return false;
+async function sendCarCommand(command, params = {}) {
+    const id = localStorage.getItem('tesla_vehicle_id');
+    if (!id || !AUTH.isLoggedIn()) { showToast('Connect Tesla to use car controls'); return { ok: false }; }
     try {
         const r = await authedFetch(`${BACKEND_URL}/api/vehicles/${id}/command`, {
             method : 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body   : JSON.stringify({ command: 'auto_conditioning_start' })
+            body   : JSON.stringify({ command, ...params })
         });
-        return r.ok;
-    } catch { return false; }
+        const data = await r.json().catch(() => ({}));
+        const ok = data.response?.result === true || r.ok;
+        return { ok, error: data.response?.reason };
+    } catch (e) { return { ok: false, error: e.message }; }
+}
+
+function getChargerPrefs() {
+    return JSON.parse(localStorage.getItem('charger_prefs') || '["supercharger","fastned","other"]');
+}
+function saveChargerPrefs(prefs) { localStorage.setItem('charger_prefs', JSON.stringify(prefs)); }
+function matchesPref(network) {
+    const prefs = getChargerPrefs();
+    const n = network.toLowerCase();
+    if (/tesla/i.test(n)) return prefs.includes('supercharger');
+    if (/fastned/i.test(n)) return prefs.includes('fastned');
+    return prefs.includes('other');
+}
+
+async function preconditionBattery() {
+    const res = await sendCarCommand('auto_conditioning_start');
+    return res.ok;
 }
 
 function showToast(msg, duration = 3500) {
@@ -908,6 +928,8 @@ async function fetchRoute(from, to) {
         document.getElementById('destDuration').textContent = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
         document.getElementById('destDistance').textContent = formatDistance(distKm);
 
+        recommendChargerForRoute(to, distKm);
+
         if (NAV.routeLayer) NAV.map.removeLayer(NAV.routeLayer);
         NAV.routeLayer = L.geoJSON(route.geometry, {
             style: { color: '#3e6ae1', weight: 3.5, opacity: 0.85 }
@@ -1138,6 +1160,208 @@ function setupSettings() {
     });
 }
 
+// ── Car Controls ──────────────────────────────────────────────
+
+let _ctrlTemp = 21;
+
+function updateControlsUI() {
+    const climateBtn = document.getElementById('ctrlClimateToggle');
+    if (!climateBtn) return;
+
+    if (!AUTH.isLoggedIn() || !LIVE_DATA) {
+        climateBtn.textContent = 'Climate: ---';
+        document.getElementById('ctrlTempDisplay').textContent = '---';
+        return;
+    }
+
+    const on = LIVE_DATA.is_climate_on || LIVE_DATA.is_auto_conditioning_on;
+    climateBtn.textContent = `Climate: ${on ? 'ON' : 'OFF'}`;
+    climateBtn.classList.toggle('ctrl-active', !!on);
+
+    const temp  = LIVE_DATA.driver_temp_setting ?? LIVE_DATA.inside_temp ?? 21;
+    _ctrlTemp   = parseFloat(temp);
+    const unit  = USER_PREFERENCES.temperatureUnit === 'fahrenheit' ? 'F' : 'C';
+    const disp  = unit === 'F' ? Math.round(_ctrlTemp * 9 / 5 + 32) : _ctrlTemp.toFixed(1);
+    document.getElementById('ctrlTempDisplay').textContent = `${disp}°${unit}`;
+
+    const limit = LIVE_DATA.charge_limit_soc ?? 80;
+    document.getElementById('ctrlChargeSlider').value = limit;
+    document.getElementById('ctrlChargeVal').textContent = `${limit}%`;
+}
+
+function setupControls() {
+    const climateBtn   = document.getElementById('ctrlClimateToggle');
+    const precondBtn   = document.getElementById('ctrlPrecondition');
+    const tempDownBtn  = document.getElementById('ctrlTempDown');
+    const tempUpBtn    = document.getElementById('ctrlTempUp');
+    const chargeSlider = document.getElementById('ctrlChargeSlider');
+    const chargeVal    = document.getElementById('ctrlChargeVal');
+    const chargeSet    = document.getElementById('ctrlChargeSet');
+    const lockBtn      = document.getElementById('ctrlLock');
+    const unlockBtn    = document.getElementById('ctrlUnlock');
+    const flashBtn     = document.getElementById('ctrlFlash');
+    const honkBtn      = document.getElementById('ctrlHonk');
+
+    async function runCmd(btn, command, params, successMsg) {
+        const orig = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '…';
+        const res = await sendCarCommand(command, params);
+        showToast(res.ok ? successMsg : (res.error || 'Command failed'));
+        btn.textContent = orig;
+        btn.disabled = false;
+        if (res.ok) {
+            const raw = await fetchLiveData();
+            if (raw) { LIVE_DATA = flattenVehicleData(raw); updateControlsUI(); }
+        }
+    }
+
+    climateBtn.addEventListener('click', async () => {
+        const on = climateBtn.classList.contains('ctrl-active');
+        await runCmd(climateBtn, on ? 'auto_conditioning_stop' : 'auto_conditioning_start', {}, on ? 'Climate off' : 'Climate on');
+    });
+
+    precondBtn.addEventListener('click', async () => {
+        const ok = await preconditionBattery();
+        showToast(ok ? 'Battery preconditioning started' : 'Could not precondition');
+    });
+
+    function adjustTemp(delta) {
+        _ctrlTemp = Math.max(15, Math.min(30, _ctrlTemp + delta));
+        const unit = USER_PREFERENCES.temperatureUnit === 'fahrenheit' ? 'F' : 'C';
+        const disp = unit === 'F' ? Math.round(_ctrlTemp * 9 / 5 + 32) : _ctrlTemp.toFixed(1);
+        document.getElementById('ctrlTempDisplay').textContent = `${disp}°${unit}`;
+    }
+
+    tempDownBtn.addEventListener('click', () => adjustTemp(-0.5));
+    tempUpBtn.addEventListener('click',   () => adjustTemp(0.5));
+
+    let _tempTimer;
+    [tempDownBtn, tempUpBtn].forEach(btn => {
+        const delta = btn === tempDownBtn ? -0.5 : 0.5;
+        btn.addEventListener('mousedown', () => { _tempTimer = setInterval(() => adjustTemp(delta), 180); });
+        btn.addEventListener('touchstart', e => { e.preventDefault(); _tempTimer = setInterval(() => adjustTemp(delta), 180); }, { passive: false });
+        ['mouseup', 'mouseleave', 'touchend'].forEach(ev => btn.addEventListener(ev, () => {
+            clearInterval(_tempTimer);
+            sendCarCommand('set_temps', { driver_temp: _ctrlTemp, passenger_temp: _ctrlTemp })
+                .then(r => { if (r.ok) showToast(`Temperature set to ${_ctrlTemp.toFixed(1)}°C`); });
+        }));
+    });
+
+    chargeSlider.addEventListener('input', () => {
+        chargeVal.textContent = `${chargeSlider.value}%`;
+    });
+    chargeSet.addEventListener('click', () => {
+        runCmd(chargeSet, 'set_charge_limit', { percent: parseInt(chargeSlider.value) }, `Charge limit set to ${chargeSlider.value}%`);
+    });
+
+    lockBtn.addEventListener('click',   () => runCmd(lockBtn,   'door_lock',    {}, 'Car locked'));
+    unlockBtn.addEventListener('click', () => runCmd(unlockBtn, 'door_unlock',  {}, 'Car unlocked'));
+    flashBtn.addEventListener('click',  () => runCmd(flashBtn,  'flash_lights', {}, 'Lights flashed'));
+    honkBtn.addEventListener('click',   () => runCmd(honkBtn,   'honk_horn',    {}, 'Honked!'));
+}
+
+// ── Charger Network Preferences ───────────────────────────────
+
+function setupChargerPrefs() {
+    const group = document.getElementById('chargerPrefGroup');
+    if (!group) return;
+    const saved = getChargerPrefs();
+    group.querySelectorAll('.pref-toggle').forEach(btn => {
+        btn.classList.toggle('active', saved.includes(btn.dataset.net));
+        btn.addEventListener('click', () => {
+            btn.classList.toggle('active');
+            const active = [...group.querySelectorAll('.pref-toggle.active')].map(b => b.dataset.net);
+            saveChargerPrefs(active);
+        });
+    });
+}
+
+// ── Smart Charger Route Recommendation ────────────────────────
+
+async function recommendChargerForRoute(dest, routeDistanceKm) {
+    const card = document.getElementById('chargeRec');
+    const body = document.getElementById('chargeRecBody');
+    if (!card || !body) return;
+
+    const rangeKm = LIVE_DATA
+        ? (LIVE_DATA.battery_range_km ?? (LIVE_DATA.battery_range ? LIVE_DATA.battery_range * 1.60934 : null))
+        : null;
+    const buffer = 1.15;
+
+    if (!rangeKm || rangeKm >= routeDistanceKm * buffer) {
+        card.classList.add('hidden');
+        return;
+    }
+
+    let userLat, userLon;
+    try {
+        const pos = await new Promise((res, rej) =>
+            navigator.geolocation.getCurrentPosition(res, rej, { timeout: 6000 })
+        );
+        userLat = pos.coords.latitude;
+        userLon = pos.coords.longitude;
+    } catch { card.classList.add('hidden'); return; }
+
+    const midLat = (userLat + dest.lat) / 2;
+    const midLon = (userLon + dest.lon) / 2;
+
+    let stations = [];
+    try {
+        const [mid, near] = await Promise.all([
+            fetchNearbyChargers(midLat, midLon, 25),
+            fetchNearbyChargers(dest.lat, dest.lon, 20)
+        ]);
+        stations = [...mid, ...near];
+    } catch { card.classList.add('hidden'); return; }
+
+    const prefs = getChargerPrefs();
+    const seen  = new Set();
+    const filtered = stations.filter(s => {
+        const key = `${s.lat.toFixed(4)},${s.lon.toFixed(4)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        const n = (s.network || '').toLowerCase();
+        if (/tesla/i.test(n))   return prefs.includes('supercharger');
+        if (/fastned/i.test(n)) return prefs.includes('fastned');
+        return prefs.includes('other');
+    });
+
+    filtered.forEach(s => { s.dist = haversineKm(userLat, userLon, s.lat, s.lon); });
+    filtered.sort((a, b) => a.dist - b.dist);
+
+    const top = filtered.slice(0, 3);
+    if (!top.length) { card.classList.add('hidden'); return; }
+
+    const shortfall = Math.round(routeDistanceKm * buffer - rangeKm);
+    body.innerHTML = `<div class="rec-info">Range ~${Math.round(rangeKm)} km · Trip needs ~${Math.round(routeDistanceKm * buffer)} km (${shortfall} km short):</div>`;
+
+    top.forEach(s => {
+        const isTesla   = /tesla/i.test(s.network);
+        const isFastned = /fastned/i.test(s.network);
+        const badgeClass = isTesla ? 'badge-tesla' : isFastned ? 'badge-fastned' : 'badge-other';
+        const badgeLabel = isTesla ? 'Supercharger' : isFastned ? 'Fastned' : (s.network || 'Charger');
+
+        const el = document.createElement('div');
+        el.className = 'rec-item';
+        el.innerHTML = `
+            <div class="rec-item-header">
+                <span class="charger-badge ${badgeClass}">${badgeLabel}</span>
+                <span class="charger-dist">${s.dist.toFixed(1)} km away</span>
+            </div>
+            <div class="rec-item-name">${s.name}</div>
+        `;
+        const navBtn = document.createElement('button');
+        navBtn.className = 'charger-nav-btn';
+        navBtn.textContent = 'Navigate + Precondition';
+        navBtn.addEventListener('click', () => navigateToCharger(s.lat, s.lon, s.name));
+        el.appendChild(navBtn);
+        body.appendChild(el);
+    });
+
+    card.classList.remove('hidden');
+}
+
 // ── Init ───────────────────────────────────────────────────────
 
 async function init() {
@@ -1158,6 +1382,8 @@ async function init() {
     loadAllTeslaData();
     setupNavigation();
     setupSettings();
+    setupControls();
+    setupChargerPrefs();
 
     // Auto-refresh live data every 5 minutes when connected
     setInterval(async () => {
