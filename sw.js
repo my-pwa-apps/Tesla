@@ -1,8 +1,8 @@
-const CACHE = 'tesla-dash-v3';
+const CACHE = 'tesla-dash-v4';
 const STATIC = [
     '/',
     '/index.html',
-    '/app.js',
+    '/app.js?v=3',
     '/i18n.js',
     '/styles.css',
     '/manifest.json',
