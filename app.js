@@ -138,8 +138,12 @@ async function initOAuth() {
         const r = await fetch(`${BACKEND_URL}/api/config`);
         const d = await r.json();
         TESLA_OAUTH.clientId   = d.clientId;
-        // Redirect back to callback.html on the same origin the user is browsing from
-        TESLA_OAUTH.redirectUri = new URL('callback.html', window.location.href).href;
+        // Always redirect to the Vercel-hosted callback (stable, registered URL)
+        // For local dev fall back to the local backend callback
+        const h = window.location.hostname;
+        TESLA_OAUTH.redirectUri = (h === 'localhost' || h === '127.0.0.1')
+            ? 'http://localhost:3000/callback.html'
+            : 'https://bart-gilt-delta.vercel.app/callback.html';
     } catch { /* backend unavailable */ }
 }
 
