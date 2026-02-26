@@ -170,7 +170,8 @@ async function connectTesla() {
         state,
         code_challenge        : challenge,
         code_challenge_method : 'S256',
-        audience              : TESLA_OAUTH.audience
+        audience              : TESLA_OAUTH.audience,
+        prompt                : 'consent'   // force consent screen even if previously authorized
     });
 
     window.open(`${TESLA_OAUTH.authUrl}?${params}`, 'tesla_auth',
