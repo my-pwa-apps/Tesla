@@ -1,10 +1,12 @@
-const CACHE = 'tesla-dash-v1';
+const CACHE = 'tesla-dash-v2';
 const STATIC = [
     '/',
     '/index.html',
     '/app.js',
+    '/i18n.js',
     '/styles.css',
     '/manifest.json',
+    '/favicon.svg',
     '/icon-192.svg',
     '/icon-512.svg',
     'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap',
