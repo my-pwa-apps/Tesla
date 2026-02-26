@@ -522,6 +522,87 @@ header {
     font-size: 0.8rem;
 }
 
+.charger-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.charger-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: #fff;
+}
+
+.badge-tesla   { background: var(--c-red); }
+.badge-fastned { background: #f7941d; }
+.badge-other   { background: #555; }
+
+.charger-dist {
+    font-size: 0.75rem;
+    color: var(--c-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.charger-nav-btn {
+    margin-top: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-item);
+    color: var(--c-text-muted);
+    font-size: 0.75rem;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition), color var(--transition);
+    text-align: center;
+}
+
+.charger-nav-btn:hover {
+    background: var(--c-surface-2);
+    border-color: var(--c-border-hover);
+    color: var(--c-white);
+}
+
+.charger-empty {
+    text-align: center;
+    padding: 20px 12px;
+    color: var(--c-text-muted);
+    font-size: 0.85rem;
+}
+
+/* ── Toast notification ───────────────────────────────────── */
+#appToast {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border-hover);
+    border-radius: 20px;
+    padding: 10px 20px;
+    font-size: 0.8rem;
+    color: var(--c-text);
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 9999;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+}
+
+#appToast.toast-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
 /* ── Trip Computer ───────────────────────────────────────── */
 
 .trip-stats {
@@ -1021,7 +1102,7 @@ header {
 
 .nav-quick-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 6px;
 }
 

@@ -631,6 +631,75 @@ function renderAllTiles() {
 
 // ── Charging Stations ──────────────────────────────────────────
 
+// ── Charger helpers ─────────────────────────────────────────
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+    const R = 6371, toR = Math.PI / 180;
+    const dLat = (lat2 - lat1) * toR, dLon = (lon2 - lon1) * toR;
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(lat1 * toR) * Math.cos(lat2 * toR) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function fetchNearbyChargers(lat, lon, radiusKm = 25) {
+    const query = `[out:json][timeout:15];
+(
+  node["amenity"="charging_station"]["network"~"Tesla|Fastned",i](around:${radiusKm * 1000},${lat},${lon});
+  way["amenity"="charging_station"]["network"~"Tesla|Fastned",i](around:${radiusKm * 1000},${lat},${lon});
+);
+out center;`;
+    const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
+    const d = await r.json();
+    return d.elements.map(el => ({
+        lat    : el.lat ?? el.center?.lat,
+        lon    : el.lon ?? el.center?.lon,
+        name   : el.tags?.name || el.tags?.operator || el.tags?.network || 'Charging Station',
+        network: el.tags?.network || el.tags?.operator || '',
+        sockets: el.tags?.capacity || el.tags?.['charging:count'] || null
+    })).filter(s => s.lat && s.lon);
+}
+
+async function preconditionBattery() {
+    const id = AUTH.getVehicleId ? AUTH.getVehicleId() : localStorage.getItem('tesla_vehicle_id');
+    if (!id || !AUTH.isLoggedIn()) return false;
+    try {
+        const r = await authedFetch(`${BACKEND_URL}/api/vehicles/${id}/command`, {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body   : JSON.stringify({ command: 'auto_conditioning_start' })
+        });
+        return r.ok;
+    } catch { return false; }
+}
+
+function showToast(msg, duration = 3500) {
+    let t = document.getElementById('appToast');
+    if (!t) {
+        t = document.createElement('div');
+        t.id = 'appToast';
+        document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.classList.add('toast-visible');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('toast-visible'), duration);
+}
+
+async function navigateToCharger(lat, lon, name) {
+    // Switch to nav tile search tab and route on the map
+    switchNavTab('search');
+    document.getElementById('navPaneSearch').classList.remove('hidden');
+    await selectDestination({ lat, lon, name, address: name });
+
+    // Trigger battery preconditioning
+    if (AUTH.isLoggedIn()) {
+        const ok = await preconditionBattery();
+        showToast(ok ? `Navigating to ${name} · Battery preconditioning started` : `Navigating to ${name}`);
+    } else {
+        showToast(`Navigating to ${name}`);
+    }
+}
+
 async function findChargers() {
     const btn  = document.getElementById('findChargersBtn');
     const info = document.getElementById('chargingInfo');
@@ -639,37 +708,49 @@ async function findChargers() {
 
     try {
         const pos = await new Promise((res, rej) =>
-            navigator.geolocation.getCurrentPosition(res, rej)
+            navigator.geolocation.getCurrentPosition(res, rej, { timeout: 8000 })
         );
         const { latitude: lat, longitude: lon } = pos.coords;
 
-        const resp = await fetch(
-            `https://api.openchargemap.io/v3/poi/?output=json&latitude=${lat}&longitude=${lon}` +
-            `&distance=10&maxresults=5&compact=true&verbose=false`
-        );
-        const data = await resp.json();
+        const stations = await fetchNearbyChargers(lat, lon, 30);
+        stations.forEach(s => { s.dist = haversineKm(lat, lon, s.lat, s.lon); });
+        stations.sort((a, b) => a.dist - b.dist);
 
         info.classList.remove('hidden');
         info.innerHTML = '';
 
-        if (!data.length) {
-            info.innerHTML = '<p style="text-align:center;padding:20px;color:var(--c-text-muted)">No chargers found nearby</p>';
+        if (!stations.length) {
+            info.innerHTML = '<p class="charger-empty">No Supercharger or Fastned found within 30 km</p>';
         } else {
-            data.forEach(s => {
+            stations.slice(0, 12).forEach(s => {
+                const isTesla   = /tesla/i.test(s.network);
+                const isFastned = /fastned/i.test(s.network);
+                const badgeClass = isTesla ? 'badge-tesla' : isFastned ? 'badge-fastned' : 'badge-other';
+                const badgeLabel = isTesla ? 'Supercharger' : isFastned ? 'Fastned' : s.network;
+
                 const el = document.createElement('div');
                 el.className = 'charger-item';
                 el.innerHTML = `
-                    <div class="charger-name">${s.AddressInfo.Title}</div>
-                    <div class="charger-distance">${s.AddressInfo.AddressLine1 || 'Address unavailable'}</div>
+                    <div class="charger-item-header">
+                        <span class="charger-badge ${badgeClass}">${badgeLabel}</span>
+                        <span class="charger-dist">${s.dist.toFixed(1)} km</span>
+                    </div>
+                    <div class="charger-name">${s.name}</div>
+                    ${s.sockets ? `<div class="charger-distance">${s.sockets} sockets</div>` : ''}
                 `;
+                const navBtn = document.createElement('button');
+                navBtn.className = 'charger-nav-btn';
+                navBtn.textContent = 'Navigate + Precondition';
+                navBtn.addEventListener('click', () => navigateToCharger(s.lat, s.lon, s.name));
+                el.appendChild(navBtn);
                 info.appendChild(el);
             });
         }
 
         btn.textContent = 'Refresh';
         btn.disabled    = false;
-    } catch {
-        info.innerHTML  = '<p style="text-align:center;padding:20px;color:var(--c-text-muted)">Enable location services to find chargers</p>';
+    } catch (e) {
+        info.innerHTML = `<p class="charger-empty">${e.code === 1 ? 'Enable location services to find chargers' : 'Could not load chargers'}</p>`;
         info.classList.remove('hidden');
         btn.textContent = 'Find Chargers';
         btn.disabled    = false;
@@ -994,11 +1075,30 @@ function switchNavTab(tab) {
 }
 
 function handleQuickDestination(dest) {
-    const urls = {
-        supercharger: 'https://www.tesla.com/findus?v=2&bounds=90,-180,-90,180&zoom=4&filters=supercharger',
-        service:      'https://www.tesla.com/findus?v=2&bounds=90,-180,-90,180&zoom=4&filters=service'
-    };
-    if (urls[dest]) window.open(urls[dest], '_blank', 'noopener');
+    if (dest === 'service') {
+        window.open('https://www.tesla.com/findus?v=2&filters=service', '_blank', 'noopener');
+        return;
+    }
+    const networkPattern = dest === 'supercharger' ? 'tesla' : dest === 'fastned' ? 'fastned' : null;
+    if (!networkPattern) return;
+
+    navigator.geolocation.getCurrentPosition(async pos => {
+        const { latitude: lat, longitude: lon } = pos.coords;
+        showToast('Searching for nearest ' + (dest === 'supercharger' ? 'Supercharger' : 'Fastned') + '…');
+        try {
+            const stations = await fetchNearbyChargers(lat, lon, 50);
+            const filtered = stations.filter(s => new RegExp(networkPattern, 'i').test(s.network));
+            filtered.forEach(s => { s.dist = haversineKm(lat, lon, s.lat, s.lon); });
+            filtered.sort((a, b) => a.dist - b.dist);
+            if (filtered.length) {
+                await navigateToCharger(filtered[0].lat, filtered[0].lon, filtered[0].name);
+            } else {
+                showToast('None found within 50 km');
+            }
+        } catch {
+            showToast('Could not find chargers');
+        }
+    }, () => showToast('Enable location services'), { timeout: 8000 });
 }
 
 // ── Settings ───────────────────────────────────────────────────
