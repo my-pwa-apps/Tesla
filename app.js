@@ -15,7 +15,8 @@ const TESLA_OAUTH = {
     authUrl        : 'https://auth.tesla.com/oauth2/v3/authorize',
     clientId       : null,   // loaded from backend /api/config
     redirectUri    : null,   // set after clientId loads
-    scopes         : 'openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds'
+    scopes         : 'openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds',
+    audience       : 'https://fleet-api.prd.eu.vn.cloud.tesla.com'
 };
 
 const USER_PREFERENCES = {
@@ -168,7 +169,8 @@ async function connectTesla() {
         scope                 : TESLA_OAUTH.scopes,
         state,
         code_challenge        : challenge,
-        code_challenge_method : 'S256'
+        code_challenge_method : 'S256',
+        audience              : TESLA_OAUTH.audience
     });
 
     window.open(`${TESLA_OAUTH.authUrl}?${params}`, 'tesla_auth',
