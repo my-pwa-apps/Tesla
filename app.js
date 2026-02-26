@@ -677,13 +677,14 @@ async function loadAllTeslaData(forceDemo = false) {
             renderAllTiles();
 
             try {
-                showToast('Waking vehicle\u2026', 35000);(
+                showToast('Waking vehicle\u2026', 35000);
+                const wr = await authedFetch(
                     `${BACKEND_URL}/api/vehicles/${vid}/wake_up`, { method: 'POST' }
                 );
                 const wj = await wr.json().catch(() => ({}));
                 // wj.online === true  → backend confirmed online
                 // wj.online === false → timed out; still try vehicle_data
-                if (!wr.ok && !wj.online && wj.online !== false) {
+                if (!wr.ok && wj.online == null) {
                     dismissToast();
                     showToast('Could not reach vehicle');
                     return;

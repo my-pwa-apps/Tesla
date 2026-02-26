@@ -44,21 +44,35 @@ async function safeJson(r) {
 }
 
 // ── Helper: proxy a Fleet API GET ─────────────────────────────────────────────
-async function fleetGet(path, token) {
-    const r = await fetch(`${TESLA.fleetApiBase}${path}`, {
-        headers: { Authorization: `Bearer ${token}` }
-    });
-    return { status: r.status, body: await safeJson(r) };
+async function fleetGet(path, token, timeoutMs = 55000) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+        const r = await fetch(`${TESLA.fleetApiBase}${path}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: ac.signal
+        });
+        return { status: r.status, body: await safeJson(r) };
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 // ── Helper: proxy a Fleet API POST ────────────────────────────────────────────
-async function fleetPost(path, token, payload = {}) {
-    const r = await fetch(`${TESLA.fleetApiBase}${path}`, {
-        method : 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body   : JSON.stringify(payload)
-    });
-    return { status: r.status, body: await safeJson(r) };
+async function fleetPost(path, token, payload = {}, timeoutMs = 55000) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+        const r = await fetch(`${TESLA.fleetApiBase}${path}`, {
+            method : 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body   : JSON.stringify(payload),
+            signal: ac.signal
+        });
+        return { status: r.status, body: await safeJson(r) };
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 // ── Extract bearer token from request ────────────────────────────────────────
