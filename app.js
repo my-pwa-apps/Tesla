@@ -748,7 +748,6 @@ out center tags;`;
         };
     }).filter(s => s.lat && s.lon);
 }
-}
 
 async function sendCarCommand(command, params = {}) {
     const id = localStorage.getItem('tesla_vehicle_id');
