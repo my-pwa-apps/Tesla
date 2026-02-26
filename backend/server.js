@@ -76,17 +76,26 @@ app.post('/api/auth/token', async (req, res) => {
         return res.status(500).json({ error: 'Server credentials not configured', hint: 'Set TESLA_CLIENT_ID and TESLA_CLIENT_SECRET in Vercel env vars' });
     }
     try {
+        const params = new URLSearchParams({
+            grant_type   : 'authorization_code',
+            client_id    : TESLA.clientId,
+            client_secret: TESLA.clientSecret,
+            code, code_verifier, redirect_uri
+        });
+        console.log('Token exchange params:', { grant_type: 'authorization_code', client_id: TESLA.clientId, redirect_uri, code: code?.substring(0,12)+'...' });
         const r = await fetch(TESLA.tokenUrl, {
             method : 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body   : new URLSearchParams({
-                grant_type   : 'authorization_code',
-                client_id    : TESLA.clientId,
-                client_secret: TESLA.clientSecret,
-                code, code_verifier, redirect_uri
-            }).toString()
+            body   : params.toString()
         });
+        const contentType = r.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            const text = await r.text();
+            console.error('Tesla returned non-JSON:', r.status, text.substring(0, 300));
+            return res.status(502).json({ error: 'Tesla returned unexpected response', status: r.status, preview: text.substring(0, 200) });
+        }
         const data = await r.json();
+        console.log('Tesla token response:', r.status, JSON.stringify(data).substring(0, 200));
         res.status(r.ok ? 200 : r.status).json(data);
     } catch (e) {
         console.error('Token exchange error:', e);
@@ -113,6 +122,11 @@ app.post('/api/auth/refresh', async (req, res) => {
                 refresh_token
             }).toString()
         });
+        const ct = r.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+            const text = await r.text();
+            return res.status(502).json({ error: 'Tesla returned unexpected response', preview: text.substring(0, 200) });
+        }
         const data = await r.json();
         res.status(r.ok ? 200 : r.status).json(data);
     } catch (e) {
