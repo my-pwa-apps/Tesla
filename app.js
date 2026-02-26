@@ -202,8 +202,12 @@ window.addEventListener('message', async e => {
                 redirect_uri : TESLA_OAUTH.redirectUri
             })
         });
-        if (!r.ok) throw new Error('Token exchange failed');
-        AUTH.save(await r.json());
+        const tokenData = await r.json();
+        if (!r.ok) {
+            console.error('Token exchange error response:', tokenData);
+            throw new Error(tokenData.error || tokenData.error_description || 'Token exchange failed');
+        }
+        AUTH.save(tokenData);
 
         await loadVehicles();
         updateConnectUI('connected');

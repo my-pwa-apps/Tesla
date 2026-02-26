@@ -72,6 +72,9 @@ app.get('/api/config', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/auth/token', async (req, res) => {
     const { code, code_verifier, redirect_uri } = req.body;
+    if (!TESLA.clientId || !TESLA.clientSecret) {
+        return res.status(500).json({ error: 'Server credentials not configured', hint: 'Set TESLA_CLIENT_ID and TESLA_CLIENT_SECRET in Vercel env vars' });
+    }
     try {
         const r = await fetch(TESLA.tokenUrl, {
             method : 'POST',
@@ -87,7 +90,7 @@ app.post('/api/auth/token', async (req, res) => {
         res.status(r.ok ? 200 : r.status).json(data);
     } catch (e) {
         console.error('Token exchange error:', e);
-        res.status(500).json({ error: 'Token exchange failed' });
+        res.status(500).json({ error: 'Token exchange failed', detail: e.message });
     }
 });
 
@@ -96,6 +99,9 @@ app.post('/api/auth/token', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/auth/refresh', async (req, res) => {
     const { refresh_token } = req.body;
+    if (!TESLA.clientId || !TESLA.clientSecret) {
+        return res.status(500).json({ error: 'Server credentials not configured' });
+    }
     try {
         const r = await fetch(TESLA.tokenUrl, {
             method : 'POST',
