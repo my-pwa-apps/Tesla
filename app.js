@@ -713,21 +713,28 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 }
 
 async function fetchNearbyChargers(lat, lon, radiusKm = 25) {
-    const query = `[out:json][timeout:15];
+    const r = radiusKm * 1000;
+    const query = `[out:json][timeout:20];
 (
-  node["amenity"="charging_station"]["network"~"Tesla|Fastned",i](around:${radiusKm * 1000},${lat},${lon});
-  way["amenity"="charging_station"]["network"~"Tesla|Fastned",i](around:${radiusKm * 1000},${lat},${lon});
+  node["amenity"="charging_station"](around:${r},${lat},${lon});
+  way["amenity"="charging_station"](around:${r},${lat},${lon});
 );
-out center;`;
-    const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
-    const d = await r.json();
-    return d.elements.map(el => ({
-        lat    : el.lat ?? el.center?.lat,
-        lon    : el.lon ?? el.center?.lon,
-        name   : el.tags?.name || el.tags?.operator || el.tags?.network || 'Charging Station',
-        network: el.tags?.network || el.tags?.operator || '',
-        sockets: el.tags?.capacity || el.tags?.['charging:count'] || null
-    })).filter(s => s.lat && s.lon);
+out center tags;`;
+    const resp = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
+    const d = await resp.json();
+    return d.elements.map(el => {
+        const t = el.tags || {};
+        const network  = t.network  || t.operator || t.brand || '';
+        const name     = t.name     || t.operator || t.brand || t.network || 'Charging Station';
+        return {
+            lat    : el.lat ?? el.center?.lat,
+            lon    : el.lon ?? el.center?.lon,
+            name,
+            network,
+            sockets: t.capacity || t['charging:count'] || null
+        };
+    }).filter(s => s.lat && s.lon);
+}
 }
 
 async function sendCarCommand(command, params = {}) {
@@ -752,8 +759,8 @@ function saveChargerPrefs(prefs) { localStorage.setItem('charger_prefs', JSON.st
 function matchesPref(network) {
     const prefs = getChargerPrefs();
     const n = network.toLowerCase();
-    if (/tesla/i.test(n)) return prefs.includes('supercharger');
-    if (/fastned/i.test(n)) return prefs.includes('fastned');
+    if (/tesla|supercharger/i.test(n)) return prefs.includes('supercharger');
+    if (/fastned/i.test(n))            return prefs.includes('fastned');
     return prefs.includes('other');
 }
 
@@ -802,7 +809,8 @@ async function findChargers() {
         );
         const { latitude: lat, longitude: lon } = pos.coords;
 
-        const stations = await fetchNearbyChargers(lat, lon, 30);
+        let stations = await fetchNearbyChargers(lat, lon, 30);
+        stations = stations.filter(s => matchesPref(s.network));
         stations.forEach(s => { s.dist = haversineKm(lat, lon, s.lat, s.lon); });
         stations.sort((a, b) => a.dist - b.dist);
 
@@ -810,13 +818,13 @@ async function findChargers() {
         info.innerHTML = '';
 
         if (!stations.length) {
-            info.innerHTML = `<p class="charger-empty">${t('no_chargers')}</p>`;;
+            info.innerHTML = `<p class="charger-empty">${t('no_chargers')}</p>`;
         } else {
             stations.slice(0, 12).forEach(s => {
-                const isTesla   = /tesla/i.test(s.network);
+                const isTesla   = /tesla|supercharger/i.test(s.network);
                 const isFastned = /fastned/i.test(s.network);
                 const badgeClass = isTesla ? 'badge-tesla' : isFastned ? 'badge-fastned' : 'badge-other';
-                const badgeLabel = isTesla ? 'Supercharger' : isFastned ? 'Fastned' : s.network;
+                const badgeLabel = isTesla ? 'Supercharger' : isFastned ? 'Fastned' : (s.network || 'Charger');
 
                 const el = document.createElement('div');
                 el.className = 'charger-item';
