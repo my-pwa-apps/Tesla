@@ -1,927 +1,1050 @@
-// Tesla Dashboard App
+// ============================================================
+//  Tesla Dashboard – app.js
+// ============================================================
 
-// Tesla OAuth Configuration
-const TESLA_OAUTH_CONFIG = {
-    // Client ID - Get from backend to ensure it matches
-    // This will be fetched from backend on load
-    clientId: null,
-    
-    // ⚠️ NEVER include client secret in frontend!
-    // It's stored securely in backend/.env
-    
-    // Redirect URI - must match exactly what's registered in Tesla Developer Portal
-    // Using Vercel callback since Fleet API is registered with bart-gilt-delta.vercel.app
-    redirectUri: 'https://bart-gilt-delta.vercel.app/callback.html',
-    authUrl: 'https://auth.tesla.com/oauth2/v3/authorize',
-    
-    // Use backend proxy for token exchange (avoids CORS and keeps secret secure)
-    useBackend: true,
-    // Backend URL - Vercel deployment
-    backendUrl: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'http://localhost:3000/api'
-        : 'https://bart-gilt-delta.vercel.app/api',
-    
-    // Direct API URLs (not used when useBackend is true)
-    tokenUrl: 'https://auth.tesla.com/oauth2/v3/token',
-    apiUrl: 'https://owner-api.teslamotors.com/api/1',
-    
-    scope: 'openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds'
+// ── Configuration ────────────────────────────────────────────
+
+const BACKEND_URL = (() => {
+    const h = window.location.hostname;
+    return (h === 'localhost' || h === '127.0.0.1')
+        ? 'http://localhost:3000'
+        : 'https://bart-gilt-delta.vercel.app';
+})();
+
+const TESLA_OAUTH = {
+    authUrl        : 'https://auth.tesla.com/oauth2/v3/authorize',
+    clientId       : null,   // loaded from backend /api/config
+    redirectUri    : null,   // set after clientId loads
+    scopes         : 'openid offline_access vehicle_device_data vehicle_cmds vehicle_charging_cmds'
 };
 
-// Fetch Client ID from backend on load
-async function initializeOAuthConfig() {
-    try {
-        const response = await fetch(`${TESLA_OAUTH_CONFIG.backendUrl}/config`);
-        if (response.ok) {
-            const config = await response.json();
-            TESLA_OAUTH_CONFIG.clientId = config.clientId;
-            console.log('OAuth config loaded from backend');
-        } else {
-            console.error('Failed to load config from backend');
-        }
-    } catch (error) {
-        console.error('Backend not available:', error);
-    }
-}
-
-// Tesla API Configuration
-const TESLA_CONFIG = {
-    accessToken: localStorage.getItem('tesla_access_token') || null,
-    refreshToken: localStorage.getItem('tesla_refresh_token') || null,
-    tokenExpiry: localStorage.getItem('tesla_token_expiry') || null,
-    vehicleId: localStorage.getItem('tesla_vehicle_id') || null,
-    useMockData: !localStorage.getItem('tesla_access_token')
-};
-
-// Mock Tesla data for demo purposes
-const MOCK_TESLA_DATA = {
-    battery_level: 78,
-    battery_range: 245.2,
-    charging_state: "Disconnected",
-    charge_limit_soc: 90,
-    est_battery_range: 245.2,
-    inside_temp: 68.5,
-    outside_temp: 55.2,
-    is_climate_on: false,
-    odometer: 15234.7,
-    vehicle_name: "Model 3 Highland",
-    shift_state: "P",
-    speed: 0,
-    latitude: 52.5781,
-    longitude: 4.6937,
-    locked: true,
-    sentry_mode: true
-};
-
-// User preferences
 const USER_PREFERENCES = {
-    temperatureUnit: localStorage.getItem('temp_unit') || 'auto', // 'auto', 'celsius', 'fahrenheit'
-    userLocation: null
+    temperatureUnit: localStorage.getItem('temp_unit') || 'celsius',
+    distanceUnit   : localStorage.getItem('dist_unit') || 'km',
+    userLocation   : null
 };
 
-// Auto-detect temperature unit based on location
-function getTemperatureUnit(latitude) {
-    if (USER_PREFERENCES.temperatureUnit !== 'auto') {
-        return USER_PREFERENCES.temperatureUnit;
+// ── Mock / fallback data ─────────────────────────────────────
+
+const MOCK_TESLA_DATA = {
+    // charge_state
+    battery_level        : 78,
+    battery_range        : 245.2,
+    charging_state       : 'Disconnected',
+    charge_limit_soc     : 90,
+    charge_rate          : 0,
+    time_to_full_charge  : 0,
+    charge_energy_added  : 0,
+    charger_power        : 0,
+    charger_voltage      : 0,
+    // climate_state
+    inside_temp          : 20.3,
+    outside_temp         : 12.8,
+    is_climate_on        : false,
+    is_preconditioning   : false,
+    driver_temp_setting  : 21,
+    fan_status           : 0,
+    // drive_state
+    speed                : 0,
+    shift_state          : 'P',
+    power                : 0,
+    latitude             : null,
+    longitude            : null,
+    heading              : 0,
+    // vehicle_state
+    odometer             : 15234.7,
+    locked               : true,
+    sentry_mode          : true,
+    software_version     : 'Demo',
+    tpms_pressure_fl     : 2.9,
+    tpms_pressure_fr     : 2.9,
+    tpms_pressure_rl     : 2.9,
+    tpms_pressure_rr     : 2.9,
+    df: 0, dr: 0, pf: 0, pr: 0,
+    // vehicle_config
+    car_type             : 'model3',
+    // top-level
+    vehicle_name         : 'Model 3 Highland'
+};
+
+// Live data cache – populated from real API when connected
+let LIVE_DATA = null;
+
+// ── Token helpers ────────────────────────────────────────────
+
+const AUTH = {
+    getAccessToken()   { return localStorage.getItem('tesla_access_token');  },
+    getRefreshToken()  { return localStorage.getItem('tesla_refresh_token'); },
+    getExpiry()        { return parseInt(localStorage.getItem('tesla_token_expiry') || '0', 10); },
+    getVehicleId()     { return localStorage.getItem('tesla_vehicle_id');    },
+    getVehicleName()   { return localStorage.getItem('tesla_vehicle_name') || 'My Tesla'; },
+
+    save(data) {
+        localStorage.setItem('tesla_access_token',  data.access_token);
+        localStorage.setItem('tesla_refresh_token', data.refresh_token);
+        localStorage.setItem('tesla_token_expiry',  Date.now() + data.expires_in * 1000);
+    },
+
+    clear() {
+        ['tesla_access_token','tesla_refresh_token','tesla_token_expiry',
+         'tesla_vehicle_id','tesla_vehicle_name'].forEach(k => localStorage.removeItem(k));
+        LIVE_DATA = null;
+    },
+
+    isLoggedIn() { return !!AUTH.getAccessToken(); },
+
+    isExpired() {
+        const e = AUTH.getExpiry();
+        return e > 0 && Date.now() > e - 60_000;   // refresh 1 min before expiry
+    },
+
+    async refresh() {
+        const rt = AUTH.getRefreshToken();
+        if (!rt) return false;
+        try {
+            const r = await fetch(`${BACKEND_URL}/api/auth/refresh`, {
+                method : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body   : JSON.stringify({ refresh_token: rt })
+            });
+            if (!r.ok) { AUTH.clear(); return false; }
+            AUTH.save(await r.json());
+            return true;
+        } catch { return false; }
     }
-    
-    // Countries that primarily use Fahrenheit (USA, some Caribbean nations)
-    // Approximate: USA is between latitudes 25°N and 49°N, longitudes -125°W and -65°W
-    // For simplicity, we'll use a more global approach
-    const fahrenheitCountries = ['US', 'BS', 'BZ', 'KY', 'PW'];
-    
-    // Default to Celsius for most of the world
-    return 'celsius';
+};
+
+// ── PKCE helpers ─────────────────────────────────────────────
+
+function randomString(len = 64) {
+    const arr = new Uint8Array(len);
+    crypto.getRandomValues(arr);
+    return btoa(String.fromCharCode(...arr))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-function celsiusToFahrenheit(celsius) {
-    return (celsius * 9/5) + 32;
+async function sha256b64url(str) {
+    const enc  = new TextEncoder().encode(str);
+    const hash = await crypto.subtle.digest('SHA-256', enc);
+    return btoa(String.fromCharCode(...new Uint8Array(hash)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-function formatTemperature(celsius, unit = null) {
-    const tempUnit = unit || USER_PREFERENCES.temperatureUnit;
-    
-    if (tempUnit === 'fahrenheit') {
-        return `${Math.round(celsiusToFahrenheit(celsius))}°F`;
+// ── Connect / OAuth ──────────────────────────────────────────
+
+async function initOAuth() {
+    if (TESLA_OAUTH.clientId) return;
+    try {
+        const r = await fetch(`${BACKEND_URL}/api/config`);
+        const d = await r.json();
+        TESLA_OAUTH.clientId   = d.clientId;
+        // Use the backend origin as the redirect_uri (callback.html is served there)
+        TESLA_OAUTH.redirectUri = `${BACKEND_URL}/callback.html`;
+    } catch { /* backend unavailable */ }
+}
+
+async function connectTesla() {
+    await initOAuth();
+    if (!TESLA_OAUTH.clientId) {
+        alert('Backend unavailable – cannot connect.');
+        return;
     }
-    return `${Math.round(celsius)}°C`;
-}
 
-// Update time display
-function updateTime() {
-    const now = new Date();
-    const timeString = now.toLocaleString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+    const verifier  = randomString(64);
+    const challenge = await sha256b64url(verifier);
+    const state     = randomString(16);
+
+    sessionStorage.setItem('pkce_verifier', verifier);
+    sessionStorage.setItem('oauth_state',   state);
+
+    const params = new URLSearchParams({
+        response_type         : 'code',
+        client_id             : TESLA_OAUTH.clientId,
+        redirect_uri          : TESLA_OAUTH.redirectUri,
+        scope                 : TESLA_OAUTH.scopes,
+        state,
+        code_challenge        : challenge,
+        code_challenge_method : 'S256'
     });
-    document.getElementById('currentTime').textContent = timeString;
+
+    window.open(`${TESLA_OAUTH.authUrl}?${params}`, 'tesla_auth',
+        'width=560,height=720,left=400,top=100');
 }
 
+// Receive code back from callback popup
+window.addEventListener('message', async e => {
+    if (e.data?.type !== 'tesla_oauth_callback') return;
+    const { code, state } = e.data;
+
+    const savedState   = sessionStorage.getItem('oauth_state');
+    const codeVerifier = sessionStorage.getItem('pkce_verifier');
+    sessionStorage.removeItem('oauth_state');
+    sessionStorage.removeItem('pkce_verifier');
+
+    if (state !== savedState || !code || !codeVerifier) {
+        console.error('OAuth state mismatch');
+        return;
+    }
+
+    updateConnectUI('connecting');
+
+    try {
+        const r = await fetch(`${BACKEND_URL}/api/auth/token`, {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body   : JSON.stringify({
+                code,
+                code_verifier: codeVerifier,
+                redirect_uri : TESLA_OAUTH.redirectUri
+            })
+        });
+        if (!r.ok) throw new Error('Token exchange failed');
+        AUTH.save(await r.json());
+
+        await loadVehicles();
+        updateConnectUI('connected');
+        loadAllTeslaData();
+    } catch (err) {
+        console.error(err);
+        updateConnectUI('idle');
+    }
+});
+
+// ── Vehicle selection ────────────────────────────────────────
+
+async function loadVehicles() {
+    try {
+        const r = await authedFetch(`${BACKEND_URL}/api/vehicles`);
+        if (!r.ok) return;
+        const data = await r.json();
+        const list = data.response || data;
+        if (!Array.isArray(list) || !list.length) return;
+
+        // Auto-select first vehicle
+        const v = list[0];
+        const id = v.id_s || String(v.id);
+        localStorage.setItem('tesla_vehicle_id',   id);
+        localStorage.setItem('tesla_vehicle_name', v.display_name || 'Tesla');
+    } catch { /* ignore */ }
+}
+
+// ── Authenticated fetch ───────────────────────────────────────
+
+async function authedFetch(url, opts = {}) {
+    if (AUTH.isExpired()) await AUTH.refresh();
+    const token = AUTH.getAccessToken();
+    return fetch(url, {
+        ...opts,
+        headers: {
+            ...(opts.headers || {}),
+            Authorization: `Bearer ${token}`
+        }
+    });
+}
+
+// ── Vehicle data fetch ────────────────────────────────────────
+
+async function fetchLiveData() {
+    const vid = AUTH.getVehicleId();
+    if (!vid) return null;
+    try {
+        const r = await authedFetch(`${BACKEND_URL}/api/vehicles/${vid}/vehicle_data`);
+        if (!r.ok) return null;
+        const json = await r.json();
+        return json.response || json;
+    } catch { return null; }
+}
+
+// Flatten all sub-states into a single object (mirrors MOCK_TESLA_DATA shape)
+function flattenVehicleData(v) {
+    if (!v) return null;
+    const cs = v.charge_state   || {};
+    const cl = v.climate_state  || {};
+    const ds = v.drive_state    || {};
+    const vs = v.vehicle_state  || {};
+    const vc = v.vehicle_config || {};
+    return {
+        // charge_state
+        battery_level       : cs.battery_level,
+        battery_range       : cs.battery_range,
+        charging_state      : cs.charging_state,
+        charge_limit_soc    : cs.charge_limit_soc,
+        charge_rate         : cs.charge_rate         || 0,
+        time_to_full_charge : cs.time_to_full_charge || 0,
+        charge_energy_added : cs.charge_energy_added || 0,
+        charger_power       : cs.charger_power        || 0,
+        charger_voltage     : cs.charger_voltage      || 0,
+        // climate_state
+        inside_temp         : cl.inside_temp,
+        outside_temp        : cl.outside_temp,
+        is_climate_on       : cl.is_climate_on,
+        is_preconditioning  : cl.is_preconditioning,
+        driver_temp_setting : cl.driver_temp_setting,
+        fan_status          : cl.fan_status           || 0,
+        // drive_state
+        speed               : ds.speed               || 0,
+        shift_state         : ds.shift_state          || 'P',
+        power               : ds.power               || 0,
+        latitude            : ds.latitude,
+        longitude           : ds.longitude,
+        heading             : ds.heading             || 0,
+        // vehicle_state
+        odometer            : vs.odometer,
+        locked              : vs.locked,
+        sentry_mode         : vs.sentry_mode,
+        software_version    : vs.car_version          || vs.software_update?.status || '--',
+        tpms_pressure_fl    : vs.tpms_pressure_fl,
+        tpms_pressure_fr    : vs.tpms_pressure_fr,
+        tpms_pressure_rl    : vs.tpms_pressure_rl,
+        tpms_pressure_rr    : vs.tpms_pressure_rr,
+        df: vs.df, dr: vs.dr, pf: vs.pf, pr: vs.pr,
+        // vehicle_config
+        car_type            : vc.car_type,
+        // top-level
+        vehicle_name        : v.display_name          || AUTH.getVehicleName()
+    };
+}
+
+function getTeslaData() {
+    return LIVE_DATA || MOCK_TESLA_DATA;
+}
+
+// ── Connect UI button ────────────────────────────────────────
+
+function updateConnectUI(state) {
+    const btn = document.getElementById('connectTeslaBtn');
+    if (!btn) return;
+    if (state === 'connected') {
+        btn.innerHTML = `
+            <span class="connect-dot connected"></span>
+            ${AUTH.getVehicleName()}`;
+        btn.classList.add('is-connected');
+        btn.title = 'Click to disconnect';
+        btn.onclick = disconnectTesla;
+    } else if (state === 'connecting') {
+        btn.innerHTML = '<span class="connect-dot pulse"></span>Connecting…';
+        btn.classList.remove('is-connected');
+        btn.onclick = null;
+    } else {
+        btn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                <path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
+                <line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/>
+            </svg>
+            Connect Tesla`;
+        btn.classList.remove('is-connected');
+        btn.onclick = connectTesla;
+    }
+}
+
+function disconnectTesla() {
+    if (!confirm('Disconnect Tesla account?')) return;
+    AUTH.clear();
+    updateConnectUI('idle');
+    LIVE_DATA = null;
+    // Re-render all tiles with demo data
+    loadAllTeslaData(true);
+}
+
+// ── Utilities ─────────────────────────────────────────────────
+
+function celsiusToFahrenheit(c) { return (c * 9 / 5) + 32; }
+
+function formatTemperature(celsius) {
+    if (celsius == null) return '--';
+    if (USER_PREFERENCES.temperatureUnit === 'fahrenheit') {
+        return `${Math.round(celsiusToFahrenheit(celsius))}\u00b0F`;
+    }
+    return `${Math.round(celsius)}\u00b0C`;
+}
+
+function formatDistance(km) {
+    if (km == null) return '--';
+    if (USER_PREFERENCES.distanceUnit === 'miles') {
+        return `${(km * 0.621371).toFixed(1)} mi`;
+    }
+    return `${km.toFixed(1)} km`;
+}
+
+// ── Clock ──────────────────────────────────────────────────────
+
+function updateTime() {
+    document.getElementById('currentTime').textContent = new Date().toLocaleString('en-GB', {
+        weekday: 'long', year: 'numeric', month: 'long',
+        day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+}
 updateTime();
 setInterval(updateTime, 1000);
 
-// Weather API (Open-Meteo - Free, no API key required)
+// ── Weather ────────────────────────────────────────────────────
+
 async function loadWeather() {
     try {
-        // Get user location
-        if (!navigator.geolocation) {
-            throw new Error('Geolocation not supported');
-        }
-
-        navigator.geolocation.getCurrentPosition(async (position) => {
-            const { latitude, longitude } = position.coords;
-            USER_PREFERENCES.userLocation = { latitude, longitude };
-            
-            // Auto-detect temperature unit based on location
-            const tempUnit = getTemperatureUnit(latitude);
-            
-            // Get weather data
-            const weatherResponse = await fetch(
-                `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`
-            );
-            const weatherData = await weatherResponse.json();
-            
-            const weather = weatherData.current_weather;
-            
-            document.querySelector('#weatherTile .loading').classList.add('hidden');
-            document.querySelector('#weatherTile .weather-info').classList.remove('hidden');
-            document.getElementById('temperature').textContent = formatTemperature(weather.temperature, tempUnit);
-            document.getElementById('condition').textContent = getWeatherDescription(weather.weathercode);
-            document.getElementById('location').textContent = `${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°`;
-        }, (error) => {
-            // Fallback to default location if geolocation fails
-            loadDefaultWeather();
-        });
-    } catch (error) {
-        console.error('Weather error:', error);
-        loadDefaultWeather();
+        if (!navigator.geolocation) throw new Error('no geolocation');
+        navigator.geolocation.getCurrentPosition(async pos => {
+            const { latitude: lat, longitude: lon } = pos.coords;
+            USER_PREFERENCES.userLocation = { lat, lon };
+            await renderWeather(lat, lon, null);
+        }, () => renderWeather(52.3676, 4.9041, 'Amsterdam'));
+    } catch {
+        renderWeather(52.3676, 4.9041, 'Amsterdam');
     }
 }
 
-async function loadDefaultWeather() {
+async function renderWeather(lat, lon, label) {
     try {
-        // Default to San Francisco
-        const lat = 37.7749;
-        const weatherResponse = await fetch(
-            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=-122.4194&current_weather=true`
+        const resp = await fetch(
+            `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`
         );
-        const weatherData = await weatherResponse.json();
-        const weather = weatherData.current_weather;
-        
-        // Auto-detect temperature unit
-        const tempUnit = getTemperatureUnit(lat);
-        
+        const { current_weather: w } = await resp.json();
         document.querySelector('#weatherTile .loading').classList.add('hidden');
         document.querySelector('#weatherTile .weather-info').classList.remove('hidden');
-        document.getElementById('temperature').textContent = formatTemperature(weather.temperature, tempUnit);
-        document.getElementById('condition').textContent = getWeatherDescription(weather.weathercode);
-        document.getElementById('location').textContent = 'San Francisco, CA';
-    } catch (error) {
-        console.error('Default weather error:', error);
+        document.getElementById('temperature').textContent = formatTemperature(w.temperature);
+        document.getElementById('condition').textContent   = getWeatherDescription(w.weathercode);
+        document.getElementById('location').textContent    = label || `${lat.toFixed(2)}\u00b0, ${lon.toFixed(2)}\u00b0`;
+    } catch {
         document.querySelector('#weatherTile .loading').textContent = 'Weather unavailable';
     }
 }
 
 function getWeatherDescription(code) {
-    const weatherCodes = {
-        0: 'Clear sky',
-        1: 'Mainly clear',
-        2: 'Partly cloudy',
-        3: 'Overcast',
-        45: 'Foggy',
-        48: 'Foggy',
-        51: 'Light drizzle',
-        53: 'Drizzle',
-        55: 'Heavy drizzle',
-        61: 'Light rain',
-        63: 'Rain',
-        65: 'Heavy rain',
-        71: 'Light snow',
-        73: 'Snow',
-        75: 'Heavy snow',
-        77: 'Snow grains',
-        80: 'Light showers',
-        81: 'Showers',
-        82: 'Heavy showers',
-        85: 'Light snow showers',
-        86: 'Snow showers',
-        95: 'Thunderstorm',
-        96: 'Thunderstorm with hail',
-        99: 'Thunderstorm with heavy hail'
+    const map = {
+        0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',
+        45:'Fog',48:'Fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',
+        61:'Light rain',63:'Rain',65:'Heavy rain',
+        71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',
+        80:'Light showers',81:'Showers',82:'Heavy showers',
+        85:'Snow showers',86:'Heavy snow showers',
+        95:'Thunderstorm',96:'Thunderstorm + hail',99:'Thunderstorm + heavy hail'
     };
-    return weatherCodes[code] || 'Unknown';
+    return map[code] || 'Unknown';
 }
 
-// Navigation functionality
-function setupNavigation() {
-    const searchBtn = document.getElementById('navSearchBtn');
-    const searchInput = document.getElementById('navSearch');
-    const destButtons = document.querySelectorAll('.dest-btn');
-    
-    searchBtn.addEventListener('click', () => searchDestination(searchInput.value));
-    searchInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') searchDestination(searchInput.value);
-    });
-    
-    destButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const dest = btn.dataset.dest;
-            handleQuickDestination(dest);
-        });
-    });
+// ── Tesla: Battery & Charging ─────────────────────────────────
+
+function loadTeslaBattery() {
+    const d = getTeslaData();
+    document.querySelector('#teslaBatteryTile .loading').classList.add('hidden');
+    document.querySelector('#teslaBatteryTile .tesla-battery-info').classList.remove('hidden');
+
+    const lvl = d.battery_level ?? 0;
+    document.getElementById('batteryLevel').textContent  = `${lvl}%`;
+    document.getElementById('batteryRange').textContent  = formatDistance(
+        (d.battery_range || 0) * (USER_PREFERENCES.distanceUnit === 'miles' ? 1 : 1.60934)
+    );
+    document.getElementById('chargingStatus').textContent = d.charging_state || '--';
+
+    const fill = document.querySelector('.battery-bar-fill');
+    fill.style.width      = `${lvl}%`;
+    fill.style.background = lvl > 50 ? 'var(--c-white)' : lvl > 20 ? '#f59e0b' : 'var(--c-red)';
+
+    // Extra charge details — show when connected or actively charging
+    const chargeEl = document.getElementById('chargeDetails');
+    if (chargeEl) {
+        const showDetails = LIVE_DATA || d.charging_state === 'Charging';
+        chargeEl.classList.toggle('hidden', !showDetails);
+
+        const charger_kw   = d.charger_power || 0;
+        const timeToFull   = d.time_to_full_charge || 0;
+        const energyAdded  = d.charge_energy_added || 0;
+        const limit        = d.charge_limit_soc || '--';
+
+        document.getElementById('chargerPower').textContent     = charger_kw > 0 ? `${charger_kw} kW` : '--';
+        document.getElementById('timeToFull').textContent       = timeToFull > 0
+            ? timeToFull < 1 ? `${Math.round(timeToFull * 60)} min` : `${timeToFull.toFixed(1)} h`
+            : '--';
+        document.getElementById('chargeEnergyAdded').textContent = energyAdded > 0 ? `${energyAdded.toFixed(1)} kWh` : '--';
+        document.getElementById('chargeLimitDisplay').textContent = `${limit}%`;
+    }
 }
 
-async function searchDestination(query) {
-    if (!query.trim()) return;
-    
-    const resultsDiv = document.getElementById('navResults');
-    resultsDiv.innerHTML = '<div class="loading">Searching...</div>';
-    resultsDiv.classList.remove('hidden');
-    
-    try {
-        // Using Nominatim for geocoding (free, no API key)
-        const response = await fetch(
-            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5`
-        );
-        const data = await response.json();
-        
-        if (data.length === 0) {
-            resultsDiv.innerHTML = '<p class="no-results">No results found</p>';
-            return;
+// ── Tesla: Climate ────────────────────────────────────────────
+
+function loadTeslaClimate() {
+    const d = getTeslaData();
+    document.querySelector('#teslaClimateTile .loading').classList.add('hidden');
+    document.querySelector('#teslaClimateTile .tesla-climate-info').classList.remove('hidden');
+
+    document.getElementById('insideTemp').textContent  = formatTemperature(d.inside_temp);
+    document.getElementById('outsideTemp').textContent = formatTemperature(d.outside_temp);
+
+    const status = document.getElementById('climateStatus');
+    const label  = d.is_preconditioning ? 'Pre-conditioning'
+                 : d.is_climate_on      ? 'Climate On'
+                 : 'Climate Off';
+    status.textContent = label;
+    status.style.color = (d.is_climate_on || d.is_preconditioning) ? '#fff' : 'var(--c-text-muted)';
+
+    const setTemp = document.getElementById('setTempDisplay');
+    if (setTemp && d.driver_temp_setting != null) {
+        setTemp.textContent = `Set: ${formatTemperature(d.driver_temp_setting)}`;
+    }
+}
+
+// ── Tesla: Vehicle info ───────────────────────────────────────
+
+function loadTeslaVehicleInfo() {
+    const d = getTeslaData();
+    document.querySelector('#teslaVehicleTile .loading').classList.add('hidden');
+    document.querySelector('#teslaVehicleTile .tesla-vehicle-info').classList.remove('hidden');
+
+    document.getElementById('vehicleName').textContent  = d.vehicle_name || '--';
+    document.getElementById('odometer').textContent     =
+        d.odometer != null ? formatDistance(d.odometer * 1.60934) : '--';
+    document.getElementById('lockStatus').textContent   = d.locked   ? 'Locked'  : 'Unlocked';
+    document.getElementById('sentryStatus').textContent = d.sentry_mode ? 'Active' : 'Off';
+
+    document.getElementById('lockStatus').style.color   = d.locked ? 'var(--c-text)' : '#f59e0b';
+    document.getElementById('sentryStatus').style.color = d.sentry_mode ? 'var(--c-text)' : 'var(--c-text-muted)';
+
+    // Firmware version
+    const fwEl = document.getElementById('firmwareVersion');
+    if (fwEl) fwEl.textContent = d.software_version || '--';
+
+    // Tire pressures
+    const tiresEl = document.getElementById('tiresSection');
+    if (tiresEl) {
+        const fl = d.tpms_pressure_fl, fr = d.tpms_pressure_fr;
+        const rl = d.tpms_pressure_rl, rr = d.tpms_pressure_rr;
+
+        function tireColor(bar) {
+            if (bar == null) return 'var(--c-text-muted)';
+            return bar < 2.5 || bar > 3.4 ? 'var(--c-red)' : 'var(--c-text)';
         }
-        
-        resultsDiv.innerHTML = '';
-        data.forEach(place => {
-            const resultItem = document.createElement('div');
-            resultItem.className = 'nav-result-item';
-            resultItem.innerHTML = `
-                <div class="result-name">${place.display_name}</div>
-                <div class="result-coords">${parseFloat(place.lat).toFixed(4)}°, ${parseFloat(place.lon).toFixed(4)}°</div>
-            `;
-            resultItem.onclick = () => navigateToLocation(place.lat, place.lon, place.display_name);
-            resultsDiv.appendChild(resultItem);
-        });
-    } catch (error) {
-        console.error('Search error:', error);
-        resultsDiv.innerHTML = '<p class="error">Search failed</p>';
+        function tireText(bar) { return bar != null ? `${bar.toFixed(1)}` : '--'; }
+
+        document.getElementById('tpmsFL').textContent = tireText(fl);
+        document.getElementById('tpmsFR').textContent = tireText(fr);
+        document.getElementById('tpmsRL').textContent = tireText(rl);
+        document.getElementById('tpmsRR').textContent = tireText(rr);
+        document.getElementById('tpmsFL').style.color = tireColor(fl);
+        document.getElementById('tpmsFR').style.color = tireColor(fr);
+        document.getElementById('tpmsRL').style.color = tireColor(rl);
+        document.getElementById('tpmsRR').style.color = tireColor(rr);
     }
 }
 
-function navigateToLocation(lat, lon, name) {
-    // Open in Tesla browser or Google Maps
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
-    window.open(url, '_blank');
-    
-    // Show confirmation
-    const resultsDiv = document.getElementById('navResults');
-    resultsDiv.innerHTML = `<div class="nav-success">Opening navigation to ${name}...</div>`;
-}
+// ── Tesla: Drive state ────────────────────────────────────────
 
-function handleQuickDestination(dest) {
-    const messages = {
-        'home': 'Opening navigation to Home...',
-        'work': 'Opening navigation to Work...',
-        'supercharger': 'Finding nearest Supercharger...',
-        'service': 'Finding nearest Service Center...'
-    };
-    
-    const resultsDiv = document.getElementById('navResults');
-    resultsDiv.classList.remove('hidden');
-    resultsDiv.innerHTML = `<div class="nav-success">${messages[dest]}</div>`;
-    
-    // For superchargers, open Tesla's website
-    if (dest === 'supercharger') {
-        setTimeout(() => {
-            window.open('https://www.tesla.com/findus?v=2&bounds=90,-180,-90,180&zoom=4&filters=supercharger', '_blank');
-        }, 1000);
-    }
-    
-    // For service centers
-    if (dest === 'service') {
-        setTimeout(() => {
-            window.open('https://www.tesla.com/findus?v=2&bounds=90,-180,-90,180&zoom=4&filters=service', '_blank');
-        }, 1000);
+function loadDriveState() {
+    const d   = getTeslaData();
+    const el  = document.getElementById('driveStateSection');
+    if (!el) return;
+
+    const speed     = d.speed || 0;
+    const gear      = d.shift_state || 'P';
+    const power     = d.power || 0;   // kW, negative = regen
+    const isDriving = gear !== 'P' && gear !== null;
+
+    el.classList.toggle('hidden', !isDriving && !LIVE_DATA);
+
+    document.getElementById('driveSpeed').textContent = isDriving
+        ? formatDistance(speed * 1.60934).replace(' km', '').replace(' mi', '') + (USER_PREFERENCES.distanceUnit === 'miles' ? ' mph' : ' km/h')
+        : '0';
+    document.getElementById('driveGear').textContent  = gear || 'P';
+    document.getElementById('drivePower').textContent = power !== 0
+        ? `${power > 0 ? '+' : ''}${power} kW`
+        : '--';
+
+    // Update car location on nav map if available
+    if (d.latitude && d.longitude && NAV.map) {
+        updateCarLocationOnMap(d.latitude, d.longitude, d.heading);
     }
 }
 
-// Charging Stations (OpenChargeMap - Free API)
+// Show car's real GPS position on the nav map
+function updateCarLocationOnMap(lat, lon, heading) {
+    if (!NAV.map) return;
+    if (!NAV.carMarker) {
+        NAV.carMarker = L.marker([lat, lon], { icon: carIcon(heading) }).addTo(NAV.map);
+    } else {
+        NAV.carMarker.setLatLng([lat, lon]);
+        NAV.carMarker.setIcon(carIcon(heading));
+    }
+}
+
+function carIcon(heading) {
+    return L.divIcon({
+        className: '',
+        html: `<div style="width:12px;height:12px;background:#e31937;border:2.5px solid #fff;border-radius:50%;box-shadow:0 0 10px rgba(227,25,55,0.8);transform:rotate(${heading}deg)"></div>`,
+        iconAnchor: [6, 6]
+    });
+}
+
+// ── Load all Tesla data ───────────────────────────────────────
+
+async function loadAllTeslaData(forceDemo = false) {
+    if (!forceDemo && AUTH.isLoggedIn()) {
+        // Try to wake & fetch live data
+        const vid = AUTH.getVehicleId();
+        if (vid) {
+            try {
+                // Wake up if needed (fire-and-forget, then fetch)
+                authedFetch(`${BACKEND_URL}/api/vehicles/${vid}/wake_up`, { method: 'POST' })
+                    .catch(() => {});
+            } catch { /* ignore */ }
+
+            // Give it a second to wake, then fetch
+            setTimeout(async () => {
+                const raw = await fetchLiveData();
+                if (raw) {
+                    LIVE_DATA = flattenVehicleData(raw);
+                    renderAllTiles();
+                }
+            }, 2500);
+        }
+    }
+
+    // Render with whatever data is available (live or mock)
+    renderAllTiles();
+}
+
+function renderAllTiles() {
+    loadTeslaBattery();
+    loadTeslaClimate();
+    loadTeslaVehicleInfo();
+    loadDriveState();
+}
+
+// ── Charging Stations ──────────────────────────────────────────
+
 async function findChargers() {
-    const btn = document.getElementById('findChargersBtn');
+    const btn  = document.getElementById('findChargersBtn');
+    const info = document.getElementById('chargingInfo');
     btn.textContent = 'Finding...';
-    btn.disabled = true;
-    
+    btn.disabled    = true;
+
     try {
-        if (!navigator.geolocation) {
-            throw new Error('Geolocation not supported');
+        const pos = await new Promise((res, rej) =>
+            navigator.geolocation.getCurrentPosition(res, rej)
+        );
+        const { latitude: lat, longitude: lon } = pos.coords;
+
+        const resp = await fetch(
+            `https://api.openchargemap.io/v3/poi/?output=json&latitude=${lat}&longitude=${lon}` +
+            `&distance=10&maxresults=5&compact=true&verbose=false`
+        );
+        const data = await resp.json();
+
+        info.classList.remove('hidden');
+        info.innerHTML = '';
+
+        if (!data.length) {
+            info.innerHTML = '<p style="text-align:center;padding:20px;color:var(--c-text-muted)">No chargers found nearby</p>';
+        } else {
+            data.forEach(s => {
+                const el = document.createElement('div');
+                el.className = 'charger-item';
+                el.innerHTML = `
+                    <div class="charger-name">${s.AddressInfo.Title}</div>
+                    <div class="charger-distance">${s.AddressInfo.AddressLine1 || 'Address unavailable'}</div>
+                `;
+                info.appendChild(el);
+            });
         }
 
-        navigator.geolocation.getCurrentPosition(async (position) => {
-            const { latitude, longitude } = position.coords;
-            
-            const response = await fetch(
-                `https://api.openchargemap.io/v3/poi/?output=json&latitude=${latitude}&longitude=${longitude}&distance=10&maxresults=5&compact=true&verbose=false`
-            );
-            const data = await response.json();
-            
-            const chargingInfo = document.getElementById('chargingInfo');
-            chargingInfo.classList.remove('hidden');
-            chargingInfo.innerHTML = '';
-            
-            if (data.length === 0) {
-                chargingInfo.innerHTML = '<p style="text-align: center; padding: 20px;">No chargers found nearby</p>';
-            } else {
-                data.forEach(station => {
-                    const chargerItem = document.createElement('div');
-                    chargerItem.className = 'charger-item';
-                    chargerItem.innerHTML = `
-                        <div class="charger-name">${station.AddressInfo.Title}</div>
-                        <div class="charger-distance">${station.AddressInfo.AddressLine1 || 'Address unavailable'}</div>
-                    `;
-                    chargingInfo.appendChild(chargerItem);
-                });
-            }
-            
-            btn.textContent = 'Refresh';
-            btn.disabled = false;
-        }, (error) => {
-            console.error('Geolocation error:', error);
-            alert('Unable to get location. Please enable location services.');
-            btn.textContent = 'Find Chargers';
-            btn.disabled = false;
-        });
-    } catch (error) {
-        console.error('Charging stations error:', error);
-        alert('Unable to find charging stations');
+        btn.textContent = 'Refresh';
+        btn.disabled    = false;
+    } catch {
+        info.innerHTML  = '<p style="text-align:center;padding:20px;color:var(--c-text-muted)">Enable location services to find chargers</p>';
+        info.classList.remove('hidden');
         btn.textContent = 'Find Chargers';
-        btn.disabled = false;
+        btn.disabled    = false;
     }
 }
 
 document.getElementById('findChargersBtn').addEventListener('click', findChargers);
 
-// Tesla OAuth Functions
-function generateCodeVerifier() {
-    const array = new Uint8Array(32);
-    crypto.getRandomValues(array);
-    return base64URLEncode(array);
-}
+// ── Navigation ─────────────────────────────────────────────────
 
-function base64URLEncode(buffer) {
-    return btoa(String.fromCharCode.apply(null, buffer))
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=/g, '');
-}
+const NAV = {
+    map:         null,
+    userMarker:  null,
+    carMarker:   null,
+    destMarker:  null,
+    routeLayer:  null,
+    currentDest: null,
+    userLocation: null
+};
 
-async function sha256(plain) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(plain);
-    return crypto.subtle.digest('SHA-256', data);
-}
-
-async function generateCodeChallenge(verifier) {
-    const hashed = await sha256(verifier);
-    return base64URLEncode(new Uint8Array(hashed));
-}
-
-function initiateOAuthFlow() {
-    // Check if client ID is loaded
-    if (!TESLA_OAUTH_CONFIG.clientId) {
-        alert('Client ID not loaded yet. Please wait a moment and try again.');
-        console.error('Client ID not loaded from backend');
-        return;
-    }
-    
-    console.log('Starting OAuth flow with client ID:', TESLA_OAUTH_CONFIG.clientId);
-    
-    // Generate PKCE parameters
-    const codeVerifier = generateCodeVerifier();
-    const state = generateCodeVerifier();
-    
-    // Store for later use
-    sessionStorage.setItem('code_verifier', codeVerifier);
-    sessionStorage.setItem('oauth_state', state);
-    
-    // Generate code challenge
-    generateCodeChallenge(codeVerifier).then(codeChallenge => {
-        // Build authorization URL
-        const params = new URLSearchParams({
-            client_id: TESLA_OAUTH_CONFIG.clientId,
-            redirect_uri: TESLA_OAUTH_CONFIG.redirectUri,
-            response_type: 'code',
-            scope: TESLA_OAUTH_CONFIG.scope,
-            state: state,
-            code_challenge: codeChallenge,
-            code_challenge_method: 'S256',
-            locale: 'en-US',
-            prompt: 'login'
-        });
-        
-        // Redirect to Tesla OAuth
-        window.location.href = `${TESLA_OAUTH_CONFIG.authUrl}?${params.toString()}`;
-    });
-}
-
-async function exchangeCodeForToken(code) {
-    const codeVerifier = sessionStorage.getItem('code_verifier');
-    
-    if (!codeVerifier) {
-        throw new Error('Code verifier not found');
-    }
-    
-    try {
-        // Use backend proxy for secure token exchange
-        const response = await fetch(`${TESLA_OAUTH_CONFIG.backendUrl}/auth/token`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                code: code,
-                code_verifier: codeVerifier,
-                redirect_uri: TESLA_OAUTH_CONFIG.redirectUri
-            })
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Token exchange failed');
-        }
-        
-        const data = await response.json();
-        
-        // Store tokens
-        localStorage.setItem('tesla_access_token', data.access_token);
-        localStorage.setItem('tesla_refresh_token', data.refresh_token);
-        localStorage.setItem('tesla_token_expiry', Date.now() + (data.expires_in * 1000));
-        
-        TESLA_CONFIG.accessToken = data.access_token;
-        TESLA_CONFIG.refreshToken = data.refresh_token;
-        TESLA_CONFIG.tokenExpiry = Date.now() + (data.expires_in * 1000);
-        TESLA_CONFIG.useMockData = false;
-        
-        // Clean up session storage
-        sessionStorage.removeItem('code_verifier');
-        sessionStorage.removeItem('oauth_state');
-        
-        return data;
-    } catch (error) {
-        console.error('Token exchange error:', error);
-        throw error;
-    }
-}
-
-async function refreshAccessToken() {
-    if (!TESLA_CONFIG.refreshToken) {
-        throw new Error('No refresh token available');
-    }
-    
-    try {
-        // Use backend proxy for secure token refresh
-        const response = await fetch(`${TESLA_OAUTH_CONFIG.backendUrl}/auth/refresh`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                refresh_token: TESLA_CONFIG.refreshToken
-            })
-        });
-        
-        if (!response.ok) {
-            throw new Error('Token refresh failed');
-        }
-        
-        const data = await response.json();
-        
-        // Update stored tokens
-        localStorage.setItem('tesla_access_token', data.access_token);
-        localStorage.setItem('tesla_refresh_token', data.refresh_token);
-        localStorage.setItem('tesla_token_expiry', Date.now() + (data.expires_in * 1000));
-        
-        TESLA_CONFIG.accessToken = data.access_token;
-        TESLA_CONFIG.refreshToken = data.refresh_token;
-        TESLA_CONFIG.tokenExpiry = Date.now() + (data.expires_in * 1000);
-        
-        return data;
-    } catch (error) {
-        console.error('Token refresh error:', error);
-        throw error;
-    }
-}
-
-// Tesla API Functions
-async function getTeslaVehicleData() {
-    if (TESLA_CONFIG.useMockData) {
-        return MOCK_TESLA_DATA;
-    }
-    
-    // Check if token needs refresh
-    if (TESLA_CONFIG.tokenExpiry && Date.now() >= TESLA_CONFIG.tokenExpiry) {
-        try {
-            await refreshAccessToken();
-        } catch (error) {
-            console.error('Failed to refresh token:', error);
-            return MOCK_TESLA_DATA;
-        }
-    }
-    
-    try {
-        // Get vehicle ID if not set
-        if (!TESLA_CONFIG.vehicleId) {
-            const vehicles = await getTeslaVehicles();
-            if (vehicles && vehicles.length > 0) {
-                TESLA_CONFIG.vehicleId = vehicles[0].id_s;
-                localStorage.setItem('tesla_vehicle_id', TESLA_CONFIG.vehicleId);
-            } else {
-                throw new Error('No vehicles found');
-            }
-        }
-        
-        // Use backend proxy for API calls
-        const response = await fetch(
-            `${TESLA_OAUTH_CONFIG.backendUrl}/vehicles/${TESLA_CONFIG.vehicleId}/vehicle_data`,
-            {
-                headers: {
-                    'Authorization': `Bearer ${TESLA_CONFIG.accessToken}`
-                }
-            }
-        );
-        
-        if (!response.ok) {
-            throw new Error('Failed to fetch vehicle data');
-        }
-        
-        const data = await response.json();
-        return data.response;
-    } catch (error) {
-        console.error('Tesla API error:', error);
-        return MOCK_TESLA_DATA;
-    }
-}
-
-async function getTeslaVehicles() {
-    if (!TESLA_CONFIG.accessToken) {
-        return [];
-    }
-    
-    try {
-        // Use backend proxy for API calls
-        const response = await fetch(
-            `${TESLA_OAUTH_CONFIG.backendUrl}/vehicles`,
-            {
-                headers: {
-                    'Authorization': `Bearer ${TESLA_CONFIG.accessToken}`
-                }
-            }
-        );
-        
-        if (!response.ok) {
-            throw new Error('Failed to fetch vehicles');
-        }
-        
-        const data = await response.json();
-        return data.response;
-    } catch (error) {
-        console.error('Failed to fetch vehicles:', error);
-        return [];
-    }
-}
-
-async function loadTeslaBattery() {
-    try {
-        const data = await getTeslaVehicleData();
-        
-        document.querySelector('#teslaBatteryTile .loading').classList.add('hidden');
-        document.querySelector('#teslaBatteryTile .tesla-battery-info').classList.remove('hidden');
-        
-        const batteryLevel = data.battery_level || data.charge_state?.battery_level || 0;
-        const batteryRange = data.battery_range || data.charge_state?.battery_range || 0;
-        const chargingState = data.charging_state || data.charge_state?.charging_state || 'Unknown';
-        
-        document.getElementById('batteryLevel').textContent = `${batteryLevel}%`;
-        document.getElementById('batteryRange').textContent = `${Math.round(batteryRange)} mi`;
-        document.getElementById('chargingStatus').textContent = chargingState;
-        
-        // Update battery bar
-        const batteryBar = document.querySelector('.battery-bar-fill');
-        batteryBar.style.width = `${batteryLevel}%`;
-        
-        // Color code based on battery level
-        if (batteryLevel > 50) {
-            batteryBar.style.background = 'linear-gradient(90deg, #4ade80, #22c55e)';
-        } else if (batteryLevel > 20) {
-            batteryBar.style.background = 'linear-gradient(90deg, #fbbf24, #f59e0b)';
-        } else {
-            batteryBar.style.background = 'linear-gradient(90deg, #ef4444, #dc2626)';
-        }
-    } catch (error) {
-        console.error('Tesla battery error:', error);
-        document.querySelector('#teslaBatteryTile .loading').textContent = 'Battery data unavailable';
-    }
-}
-
-async function loadTeslaClimate() {
-    try {
-        const data = await getTeslaVehicleData();
-        
-        document.querySelector('#teslaClimateTile .loading').classList.add('hidden');
-        document.querySelector('#teslaClimateTile .tesla-climate-info').classList.remove('hidden');
-        
-        const insideTemp = data.inside_temp || data.climate_state?.inside_temp || 0;
-        const outsideTemp = data.outside_temp || data.climate_state?.outside_temp || 0;
-        const isClimateOn = data.is_climate_on || data.climate_state?.is_climate_on || false;
-        
-        document.getElementById('insideTemp').textContent = formatTemperature(insideTemp);
-        document.getElementById('outsideTemp').textContent = formatTemperature(outsideTemp);
-        document.getElementById('climateStatus').textContent = isClimateOn ? 'Climate On' : 'Climate Off';
-        document.getElementById('climateStatus').style.color = isClimateOn ? '#4ade80' : '#888';
-    } catch (error) {
-        console.error('Tesla climate error:', error);
-        document.querySelector('#teslaClimateTile .loading').textContent = 'Climate data unavailable';
-    }
-}
-
-async function loadTeslaVehicleInfo() {
-    try {
-        const data = await getTeslaVehicleData();
-        
-        document.querySelector('#teslaVehicleTile .loading').classList.add('hidden');
-        document.querySelector('#teslaVehicleTile .tesla-vehicle-info').classList.remove('hidden');
-        
-        const vehicleName = data.vehicle_name || data.display_name || 'Model 3';
-        const odometer = data.odometer || data.vehicle_state?.odometer || 0;
-        const locked = data.locked !== undefined ? data.locked : (data.vehicle_state?.locked || false);
-        const sentryMode = data.sentry_mode !== undefined ? data.sentry_mode : (data.vehicle_state?.sentry_mode || false);
-        
-        document.getElementById('vehicleName').textContent = vehicleName;
-        document.getElementById('odometer').textContent = `${Math.round(odometer).toLocaleString()} mi`;
-        document.getElementById('lockStatus').textContent = locked ? '🔒 Locked' : '🔓 Unlocked';
-        document.getElementById('sentryStatus').textContent = sentryMode ? '👁️ Sentry Active' : '👁️ Sentry Off';
-        
-        document.getElementById('lockStatus').style.color = locked ? '#4ade80' : '#fbbf24';
-        document.getElementById('sentryStatus').style.color = sentryMode ? '#4ade80' : '#888';
-    } catch (error) {
-        console.error('Tesla vehicle error:', error);
-        document.querySelector('#teslaVehicleTile .loading').textContent = 'Vehicle data unavailable';
-    }
-}
-
-// Setup Tesla API authentication
-function setupTeslaAuth() {
-    const authBtn = document.getElementById('teslaAuthBtn');
-    const authInfo = document.getElementById('teslaAuthInfo');
-    
-    // Check if client ID is configured
-    if (!TESLA_OAUTH_CONFIG.clientId) {
-        authInfo.innerHTML = 'Using demo data<br><small>Start backend: cd backend && npm install && npm start</small>';
-        authInfo.style.color = '#fbbf24';
-        authInfo.style.fontSize = '0.85rem';
-        authBtn.textContent = 'How to Connect';
-        
-        authBtn.addEventListener('click', () => {
-            showBackendSetupInstructions();
-        });
-        return;
-    }
-    
-    // Check if already authenticated
-    if (TESLA_CONFIG.accessToken) {
-        authBtn.textContent = 'Disconnect Tesla';
-        authInfo.textContent = 'Connected to your Tesla';
-        authInfo.style.color = '#4ade80';
-        
-        // Add virtual key setup button
-        const virtualKeyBtn = document.createElement('button');
-        virtualKeyBtn.textContent = 'Setup Virtual Key';
-        virtualKeyBtn.style.marginTop = '10px';
-        virtualKeyBtn.style.padding = '8px 16px';
-        virtualKeyBtn.style.background = '#3e6ae1';
-        virtualKeyBtn.style.color = 'white';
-        virtualKeyBtn.style.border = 'none';
-        virtualKeyBtn.style.borderRadius = '4px';
-        virtualKeyBtn.style.cursor = 'pointer';
-        virtualKeyBtn.addEventListener('click', () => {
-            window.open('https://tesla.com/_ak/bart-gilt-delta.vercel.app', '_blank');
-        });
-        authInfo.parentElement.appendChild(virtualKeyBtn);
-        
-        authBtn.addEventListener('click', () => {
-            if (confirm('Disconnect your Tesla account?')) {
-                localStorage.removeItem('tesla_access_token');
-                localStorage.removeItem('tesla_refresh_token');
-                localStorage.removeItem('tesla_token_expiry');
-                localStorage.removeItem('tesla_vehicle_id');
-                
-                TESLA_CONFIG.accessToken = null;
-                TESLA_CONFIG.refreshToken = null;
-                TESLA_CONFIG.tokenExpiry = null;
-                TESLA_CONFIG.vehicleId = null;
-                TESLA_CONFIG.useMockData = true;
-                
-                authBtn.textContent = 'Connect Tesla Account';
-                authInfo.textContent = 'Using demo data';
-                authInfo.style.color = '#888';
-                
-                // Reload page to refresh with demo data
-                setTimeout(() => location.reload(), 1000);
-            }
-        });
-    } else {
-        authBtn.textContent = 'Connect Tesla Account';
-        authInfo.textContent = 'Using demo data';
-        authInfo.style.color = '#888';
-        
-        authBtn.addEventListener('click', () => {
-            if (!TESLA_OAUTH_CONFIG.clientId) {
-                alert('Backend server not running!\n\nPlease start it first:\n\n1. Open terminal\n2. cd backend\n3. npm install\n4. npm start\n5. Refresh this page');
-                return;
-            }
-            initiateOAuthFlow();
-        });
-    }
-    
-    // Check for OAuth callback
-    handleOAuthCallback();
-}
-
-function showBackendSetupInstructions() {
-    const instructions = `
-🚀 Quick Setup to Use Live Tesla Data:
-
-1. Open a NEW terminal/PowerShell window
-
-2. Navigate to backend folder:
-   cd "${window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'))}/backend"
-
-3. Install dependencies (first time only):
-   npm install
-
-4. Start the backend server:
-   npm start
-
-5. Refresh this page
-
-6. Click "Connect Tesla Account"
-
-That's it! Your credentials are already configured in the .env file.
-
-⚡ The backend server proxies Tesla API calls securely and avoids CORS issues.
-    `.trim();
-    
-    alert(instructions);
-}
-
-function handleOAuthCallback() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
-    const error = urlParams.get('error');
-    
-    if (error) {
-        console.error('OAuth error:', error);
-        alert('Authentication failed: ' + error);
-        return;
-    }
-    
-    if (code && state) {
-        const savedState = sessionStorage.getItem('oauth_state');
-        
-        if (state !== savedState) {
-            console.error('State mismatch');
-            alert('Authentication failed: State mismatch');
-            return;
-        }
-        
-        // Exchange code for token
-        exchangeCodeForToken(code)
-            .then(() => {
-                // Clear URL parameters
-                window.history.replaceState({}, document.title, window.location.pathname);
-                
-                // Reload page to show connected state
-                location.reload();
-            })
-            .catch(error => {
-                console.error('Token exchange failed:', error);
-                alert('Failed to complete authentication. This may be due to CORS restrictions. Consider using Tessie or a backend proxy.');
-            });
-    }
-}
-
-function showOAuthSetupInstructions() {
-    const instructions = `
-� Tesla OAuth Setup:
-
-⚠️ IMPORTANT: Direct OAuth from browser has limitations due to CORS.
-
-RECOMMENDED APPROACHES:
-
-1️⃣ USE TESSIE (Easiest - $5/month):
-   - Sign up: https://my.tessie.com/
-   - Link your Tesla account
-   - Get API token
-   - Use Tessie's API (no CORS issues)
-   
-2️⃣ USE TESLAFI:
-   - Sign up: https://www.teslafi.com/
-   - Similar to Tessie
-   - Good logging features
-
-3️⃣ SELF-HOST TESLAMATE:
-   - Free & open source
-   - Requires Docker/server
-   - https://github.com/adriankumpf/teslamate
-
-4️⃣ BUILD BACKEND PROXY:
-   - Use Node.js/Python backend
-   - Proxy Tesla API calls
-   - Handle OAuth securely
-
-TO USE DIRECT OAUTH (Advanced):
-1. Register app: https://developer.tesla.com/
-2. Get Client ID & Secret
-3. Update TESLA_OAUTH_CONFIG in app.js
-4. Note: Will still hit CORS issues without backend
-
-Currently using demo data to show functionality.
-    `.trim();
-    
-    alert(instructions);
-}
-
-// Settings functionality
-function setupSettings() {
-    const tempUnitSelect = document.getElementById('tempUnit');
-    const refreshBtn = document.getElementById('refreshAllBtn');
-    
-    // Load saved preference
-    tempUnitSelect.value = USER_PREFERENCES.temperatureUnit;
-    
-    tempUnitSelect.addEventListener('change', (e) => {
-        USER_PREFERENCES.temperatureUnit = e.target.value;
-        localStorage.setItem('temp_unit', e.target.value);
-        
-        // Refresh weather and climate to show new units
-        loadWeather();
-        loadTeslaClimate();
-    });
-    
-    refreshBtn.addEventListener('click', () => {
-        loadWeather();
-        loadTeslaBattery();
-        loadTeslaClimate();
-        loadTeslaVehicleInfo();
-        refreshBtn.textContent = 'Refreshed!';
-        setTimeout(() => {
-            refreshBtn.textContent = 'Refresh All Data';
-        }, 2000);
-    });
-}
-
-// Check for OAuth callback from sessionStorage (set by callback page)
-async function checkOAuthCallback() {
-    const code = sessionStorage.getItem('tesla_oauth_code');
-    const state = sessionStorage.getItem('tesla_oauth_state');
-    
-    if (code && state) {
-        // Clear from sessionStorage
-        sessionStorage.removeItem('tesla_oauth_code');
-        sessionStorage.removeItem('tesla_oauth_state');
-        
-        // Retrieve stored code verifier
-        const codeVerifier = sessionStorage.getItem('tesla_code_verifier');
-        const storedState = sessionStorage.getItem('tesla_oauth_state_key');
-        
-        if (state !== storedState) {
-            console.error('State mismatch - possible CSRF attack');
-            return;
-        }
-        
-        // Exchange code for token
-        await exchangeCodeForToken(code, codeVerifier);
-    }
-}
-
-// Initialize OAuth config and tiles
-initializeOAuthConfig().then(async () => {
-    await checkOAuthCallback();
-    loadWeather();
-    loadTeslaBattery();
-    loadTeslaClimate();
-    loadTeslaVehicleInfo();
-    setupTeslaAuth();
-    setupNavigation();
-    setupSettings();
+const userIcon = () => L.divIcon({
+    className: '',
+    html: '<div style="width:14px;height:14px;background:#3e6ae1;border:2.5px solid #fff;border-radius:50%;box-shadow:0 0 8px rgba(62,106,225,0.7)"></div>',
+    iconAnchor: [7, 7]
 });
 
-// Refresh Tesla data every 30 seconds
-setInterval(() => {
-    loadTeslaBattery();
-    loadTeslaClimate();
-    loadTeslaVehicleInfo();
-}, 30000);
+const destIcon = () => L.divIcon({
+    className: '',
+    html: '<div style="width:14px;height:14px;background:#e31937;border:2.5px solid #fff;border-radius:50%;box-shadow:0 0 8px rgba(227,25,55,0.6)"></div>',
+    iconAnchor: [7, 7]
+});
+
+function initNavMap() {
+    if (NAV.map) return;
+
+    NAV.map = L.map('navMap', {
+        zoomControl:       false,
+        attributionControl: false
+    }).setView([52.3676, 4.9041], 12);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19, subdomains: 'abcd'
+    }).addTo(NAV.map);
+
+    L.control.zoom({ position: 'bottomright' }).addTo(NAV.map);
+
+    L.control.attribution({ position: 'bottomleft', prefix: false })
+        .addAttribution('<a href="https://www.openstreetmap.org/copyright" style="color:#555;font-size:9px">OSM</a>')
+        .addTo(NAV.map);
+
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+            const { latitude: lat, longitude: lng } = pos.coords;
+            NAV.userLocation = { lat, lon: lng };
+            NAV.map.setView([lat, lng], 13);
+            if (NAV.userMarker) NAV.map.removeLayer(NAV.userMarker);
+            NAV.userMarker = L.marker([lat, lng], { icon: userIcon() })
+                .addTo(NAV.map)
+                .bindTooltip('You are here', { direction: 'top', offset: [0, -8] });
+        }, () => {});
+    }
+
+    setTimeout(() => NAV.map && NAV.map.invalidateSize(), 350);
+}
+
+async function searchDestination(query) {
+    const q = (query || '').trim();
+    if (!q) return;
+
+    const resultsEl = document.getElementById('navResults');
+    resultsEl.innerHTML = '<div class="nav-result-loading">Searching...</div>';
+
+    try {
+        const resp = await fetch(
+            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}` +
+            `&format=json&limit=5&addressdetails=1`,
+            { headers: { 'Accept-Language': 'en' } }
+        );
+        const data = await resp.json();
+        resultsEl.innerHTML = '';
+
+        if (!data.length) {
+            resultsEl.innerHTML = '<p class="no-results">No results found</p>';
+            return;
+        }
+
+        data.forEach(place => {
+            const parts   = place.display_name.split(', ');
+            const name    = parts[0];
+            const subtext = parts.slice(1, 3).join(', ');
+
+            const el = document.createElement('div');
+            el.className = 'nav-result-item';
+            el.innerHTML = `
+                <div class="result-name">${name}</div>
+                <div class="result-coords">${subtext}</div>
+            `;
+            el.addEventListener('click', () => selectDestination({
+                lat: parseFloat(place.lat), lon: parseFloat(place.lon), name, address: place.display_name
+            }));
+            resultsEl.appendChild(el);
+        });
+    } catch {
+        resultsEl.innerHTML = '<p class="error">Search unavailable</p>';
+    }
+}
+
+async function selectDestination(dest) {
+    NAV.currentDest = dest;
+    document.getElementById('navResults').innerHTML = '';
+
+    if (NAV.destMarker) NAV.map.removeLayer(NAV.destMarker);
+    if (NAV.routeLayer) NAV.map.removeLayer(NAV.routeLayer);
+
+    NAV.destMarker = L.marker([dest.lat, dest.lon], { icon: destIcon() })
+        .addTo(NAV.map)
+        .bindTooltip(dest.name, { direction: 'top', offset: [0, -8] });
+
+    if (NAV.userLocation) {
+        NAV.map.fitBounds(
+            [[NAV.userLocation.lat, NAV.userLocation.lon], [dest.lat, dest.lon]],
+            { padding: [40, 40], animate: true }
+        );
+        await fetchRoute(NAV.userLocation, dest);
+    } else {
+        NAV.map.setView([dest.lat, dest.lon], 13, { animate: true });
+        document.getElementById('destDuration').textContent = '--';
+        document.getElementById('destDistance').textContent = '--';
+    }
+
+    document.getElementById('destInfoName').textContent    = dest.name;
+    document.getElementById('destInfoAddress').textContent =
+        dest.address.split(', ').slice(1, 4).join(', ');
+    document.getElementById('destInfo').classList.remove('hidden');
+
+    addToRecent(dest);
+}
+
+async function fetchRoute(from, to) {
+    try {
+        const url =
+            `https://router.project-osrm.org/route/v1/driving/` +
+            `${from.lon},${from.lat};${to.lon},${to.lat}` +
+            `?overview=full&geometries=geojson`;
+
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (data.code !== 'Ok' || !data.routes.length) return;
+
+        const route  = data.routes[0];
+        const distKm = route.distance / 1000;
+        const hours  = Math.floor(route.duration / 3600);
+        const mins   = Math.round((route.duration % 3600) / 60);
+
+        document.getElementById('destDuration').textContent = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+        document.getElementById('destDistance').textContent = formatDistance(distKm);
+
+        if (NAV.routeLayer) NAV.map.removeLayer(NAV.routeLayer);
+        NAV.routeLayer = L.geoJSON(route.geometry, {
+            style: { color: '#3e6ae1', weight: 3.5, opacity: 0.85 }
+        }).addTo(NAV.map);
+    } catch { /* silent */ }
+}
+
+function openInApp(app) {
+    const dest = NAV.currentDest;
+    let url;
+
+    if (dest) {
+        const enc = encodeURIComponent(dest.name);
+        url = {
+            google: `https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lon}`,
+            waze  : `https://waze.com/ul?ll=${dest.lat},${dest.lon}&navigate=yes`,
+            here  : `https://share.here.com/r/${dest.lat},${dest.lon},${enc}`,
+            abrp  : `https://abetterrouteplanner.com/?destination=${enc}`
+        }[app];
+    } else {
+        url = { google:'https://maps.google.com', waze:'https://waze.com',
+                here:'https://wego.here.com', abrp:'https://abetterrouteplanner.com' }[app];
+    }
+
+    if (url) window.open(url, '_blank', 'noopener');
+}
+
+// ── Saved / Recent ────────────────────────────────────────────
+
+function getSaved()  { return JSON.parse(localStorage.getItem('nav_saved')  || '[]'); }
+function getRecent() { return JSON.parse(localStorage.getItem('nav_recent') || '[]'); }
+
+function saveLocation(dest) {
+    const saved = getSaved();
+    if (saved.find(s => s.lat === dest.lat && s.lon === dest.lon)) {
+        const btn = document.getElementById('saveToFavBtn');
+        btn.textContent = 'Already saved';
+        setTimeout(() => btn.textContent = 'Save to Favourites', 2000);
+        return;
+    }
+    saved.unshift({ ...dest, id: Date.now() });
+    localStorage.setItem('nav_saved', JSON.stringify(saved.slice(0, 30)));
+    renderSaved();
+    const btn = document.getElementById('saveToFavBtn');
+    btn.textContent = 'Saved!';
+    setTimeout(() => btn.textContent = 'Save to Favourites', 2000);
+}
+
+function deleteSaved(id) {
+    localStorage.setItem('nav_saved', JSON.stringify(getSaved().filter(s => s.id !== id)));
+    renderSaved();
+}
+
+function addToRecent(dest) {
+    const recent = getRecent().filter(r => !(r.lat === dest.lat && r.lon === dest.lon));
+    recent.unshift({ ...dest, ts: Date.now() });
+    localStorage.setItem('nav_recent', JSON.stringify(recent.slice(0, 12)));
+    renderRecent();
+}
+
+function clearRecent() {
+    localStorage.removeItem('nav_recent');
+    renderRecent();
+}
+
+window.navGoTo  = destJson => selectDestinationAndSwitch(JSON.parse(decodeURIComponent(destJson)));
+window.navDelete = deleteSaved;
+window.navSave  = destJson => saveLocation(JSON.parse(decodeURIComponent(destJson)));
+
+function destAttr(dest) {
+    return encodeURIComponent(JSON.stringify({ lat: dest.lat, lon: dest.lon, name: dest.name, address: dest.address }));
+}
+
+function renderSaved() {
+    const items = getSaved();
+    const list  = document.getElementById('savedList');
+    const empty = document.getElementById('savedEmpty');
+    if (!items.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    list.innerHTML = items.map(s => `
+        <div class="nav-list-item">
+            <div class="nav-list-body">
+                <div class="nav-list-name">${s.name}</div>
+                <div class="nav-list-sub">${s.address.split(', ').slice(1, 3).join(', ')}</div>
+            </div>
+            <div class="nav-list-actions">
+                <button class="nav-list-btn go-btn"  onclick="navGoTo('${destAttr(s)}')">Go</button>
+                <button class="nav-list-btn del-btn" onclick="navDelete(${s.id})">&#215;</button>
+            </div>
+        </div>`).join('');
+}
+
+function renderRecent() {
+    const items = getRecent();
+    const list  = document.getElementById('recentList');
+    const empty = document.getElementById('recentEmpty');
+    if (!items.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    list.innerHTML = items.map(r => `
+        <div class="nav-list-item">
+            <div class="nav-list-body">
+                <div class="nav-list-name">${r.name}</div>
+                <div class="nav-list-sub">${r.address.split(', ').slice(1, 3).join(', ')}</div>
+            </div>
+            <div class="nav-list-actions">
+                <button class="nav-list-btn go-btn"   onclick="navGoTo('${destAttr(r)}')">Go</button>
+                <button class="nav-list-btn save-btn" onclick="navSave('${destAttr(r)}')">Save</button>
+            </div>
+        </div>`).join('');
+}
+
+function selectDestinationAndSwitch(dest) {
+    switchNavTab('search');
+    selectDestination(dest);
+}
+
+// ── Navigation setup ───────────────────────────────────────────
+
+function setupNavigation() {
+    const searchInput = document.getElementById('navSearch');
+    let searchTimer;
+
+    searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        const q = searchInput.value.trim();
+        if (q.length < 3) { document.getElementById('navResults').innerHTML = ''; return; }
+        searchTimer = setTimeout(() => searchDestination(q), 420);
+    });
+
+    searchInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { clearTimeout(searchTimer); searchDestination(searchInput.value); }
+        if (e.key === 'Escape') { searchInput.value = ''; document.getElementById('navResults').innerHTML = ''; }
+    });
+
+    document.querySelectorAll('.nav-tab').forEach(t =>
+        t.addEventListener('click', () => switchNavTab(t.dataset.tab)));
+
+    document.querySelectorAll('.nav-app-pill').forEach(btn =>
+        btn.addEventListener('click', () => openInApp(btn.dataset.app)));
+
+    document.getElementById('saveToFavBtn').addEventListener('click', () => {
+        if (NAV.currentDest) saveLocation(NAV.currentDest);
+    });
+
+    document.getElementById('clearRecentBtn').addEventListener('click', clearRecent);
+
+    document.getElementById('mapLocateBtn').addEventListener('click', () => {
+        if (NAV.userLocation && NAV.map)
+            NAV.map.setView([NAV.userLocation.lat, NAV.userLocation.lon], 14, { animate: true });
+    });
+
+    document.querySelectorAll('.dest-btn').forEach(btn =>
+        btn.addEventListener('click', () => handleQuickDestination(btn.dataset.dest)));
+
+    renderSaved();
+    renderRecent();
+    setTimeout(initNavMap, 150);
+}
+
+function switchNavTab(tab) {
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.querySelectorAll('.nav-pane').forEach(p => p.classList.add('hidden'));
+    document.getElementById('navPane' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove('hidden');
+    if (tab === 'search' && NAV.map) setTimeout(() => NAV.map.invalidateSize(), 60);
+}
+
+function handleQuickDestination(dest) {
+    const urls = {
+        supercharger: 'https://www.tesla.com/findus?v=2&bounds=90,-180,-90,180&zoom=4&filters=supercharger',
+        service:      'https://www.tesla.com/findus?v=2&bounds=90,-180,-90,180&zoom=4&filters=service'
+    };
+    if (urls[dest]) window.open(urls[dest], '_blank', 'noopener');
+}
+
+// ── Settings ───────────────────────────────────────────────────
+
+function setupSettings() {
+    const tempSel    = document.getElementById('tempUnit');
+    const distSel    = document.getElementById('distanceUnit');
+    const refreshBtn = document.getElementById('refreshAllBtn');
+
+    tempSel.value = USER_PREFERENCES.temperatureUnit;
+    distSel.value = USER_PREFERENCES.distanceUnit;
+
+    tempSel.addEventListener('change', e => {
+        USER_PREFERENCES.temperatureUnit = e.target.value;
+        localStorage.setItem('temp_unit', e.target.value);
+        loadWeather();
+        loadTeslaClimate();
+    });
+
+    distSel.addEventListener('change', e => {
+        USER_PREFERENCES.distanceUnit = e.target.value;
+        localStorage.setItem('dist_unit', e.target.value);
+        loadTeslaBattery();
+        loadDriveState();
+    });
+
+    refreshBtn.addEventListener('click', async () => {
+        refreshBtn.textContent = 'Refreshing…';
+        refreshBtn.disabled    = true;
+        if (AUTH.isLoggedIn()) {
+            const raw = await fetchLiveData();
+            if (raw) LIVE_DATA = flattenVehicleData(raw);
+        }
+        loadWeather();
+        renderAllTiles();
+        setTimeout(() => { refreshBtn.textContent = 'Refresh All Data'; refreshBtn.disabled = false; }, 1500);
+    });
+}
+
+// ── Init ───────────────────────────────────────────────────────
+
+async function init() {
+    // Restore auth state
+    if (AUTH.isLoggedIn()) {
+        if (AUTH.isExpired()) await AUTH.refresh();
+        if (AUTH.isLoggedIn()) {
+            updateConnectUI('connecting');
+            // Make sure we have a vehicle ID
+            if (!AUTH.getVehicleId()) await loadVehicles();
+            updateConnectUI('connected');
+        }
+    } else {
+        updateConnectUI('idle');
+    }
+
+    loadWeather();
+    loadAllTeslaData();
+    setupNavigation();
+    setupSettings();
+
+    // Auto-refresh live data every 5 minutes when connected
+    setInterval(async () => {
+        if (!AUTH.isLoggedIn()) return;
+        if (AUTH.isExpired()) await AUTH.refresh();
+        const raw = await fetchLiveData();
+        if (raw) { LIVE_DATA = flattenVehicleData(raw); renderAllTiles(); }
+    }, 5 * 60 * 1000);
+}
+
+init();
+

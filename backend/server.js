@@ -1,182 +1,211 @@
 const express = require('express');
-const cors = require('cors');
-const fetch = require('node-fetch');
-const path = require('path');
+const cors    = require('cors');
+const fetch   = require('node-fetch');
+const path    = require('path');
 require('dotenv').config();
 
 const app = express();
 
-// CORS configuration - allow requests from GitHub Pages and localhost
-const corsOptions = {
-    origin: [
-        'https://my-pwa-apps.github.io',
-        'http://localhost:5500',
-        'http://127.0.0.1:5500',
-        'http://localhost:3000',
-        'http://127.0.0.1:3000'
-    ],
+// ── CORS ─────────────────────────────────────────────────────────────────────
+const ALLOWED_ORIGINS = [
+    'https://my-pwa-apps.github.io',
+    'https://bart-gilt-delta.vercel.app',
+    'http://localhost:5500',
+    'http://127.0.0.1:5500',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'null'   // file:// protocol for local HTML opens
+];
+
+app.use(cors({
+    origin: (origin, cb) => cb(null, !origin || ALLOWED_ORIGINS.includes(origin)),
     credentials: true,
     optionsSuccessStatus: 200
-};
-
-app.use(cors(corsOptions));
+}));
 app.use(express.json());
 
-// Serve Tesla Fleet API public key
+// ── Static files ──────────────────────────────────────────────────────────────
 app.use('/.well-known', express.static(path.join(__dirname, '.well-known')));
-
-// Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
-const TESLA_CONFIG = {
-    clientId: process.env.TESLA_CLIENT_ID,
-    clientSecret: process.env.TESLA_CLIENT_SECRET,
-    tokenUrl: 'https://auth.tesla.com/oauth2/v3/token',
-    apiUrl: 'https://owner-api.teslamotors.com/api/1'
+// ── Tesla config ──────────────────────────────────────────────────────────────
+const TESLA = {
+    clientId     : process.env.TESLA_CLIENT_ID,
+    clientSecret : process.env.TESLA_CLIENT_SECRET,
+    tokenUrl     : 'https://auth.tesla.com/oauth2/v3/token',
+    fleetApiBase : 'https://fleet-api.prd.eu.vn.cloud.tesla.com/api/1'
 };
 
-// Endpoint to get public config (Client ID only)
-app.get('/api/config', (req, res) => {
-    if (!TESLA_CONFIG.clientId) {
-        return res.status(500).json({ 
-            error: 'Tesla Client ID not configured in .env file' 
-        });
-    }
-    
-    res.json({
-        clientId: TESLA_CONFIG.clientId
+// ── Helper: proxy a Fleet API GET ─────────────────────────────────────────────
+async function fleetGet(path, token) {
+    const r = await fetch(`${TESLA.fleetApiBase}${path}`, {
+        headers: { Authorization: `Bearer ${token}` }
     });
+    return { status: r.status, body: await r.json() };
+}
+
+// ── Helper: proxy a Fleet API POST ────────────────────────────────────────────
+async function fleetPost(path, token, payload = {}) {
+    const r = await fetch(`${TESLA.fleetApiBase}${path}`, {
+        method : 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body   : JSON.stringify(payload)
+    });
+    return { status: r.status, body: await r.json() };
+}
+
+// ── Extract bearer token from request ────────────────────────────────────────
+function bearerToken(req) {
+    return req.headers.authorization?.replace(/^Bearer\s+/i, '') || null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC CONFIG
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/config', (req, res) => {
+    if (!TESLA.clientId) return res.status(500).json({ error: 'Client ID not configured' });
+    res.json({ clientId: TESLA.clientId });
 });
 
-// Exchange authorization code for tokens
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH: exchange code for tokens
+// ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/auth/token', async (req, res) => {
     const { code, code_verifier, redirect_uri } = req.body;
-    
     try {
-        const params = new URLSearchParams({
-            grant_type: 'authorization_code',
-            client_id: TESLA_CONFIG.clientId,
-            client_secret: TESLA_CONFIG.clientSecret,
-            code: code,
-            code_verifier: code_verifier,
-            redirect_uri: redirect_uri
+        const r = await fetch(TESLA.tokenUrl, {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body   : new URLSearchParams({
+                grant_type   : 'authorization_code',
+                client_id    : TESLA.clientId,
+                client_secret: TESLA.clientSecret,
+                code, code_verifier, redirect_uri
+            }).toString()
         });
-        
-        const response = await fetch(TESLA_CONFIG.tokenUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: params.toString()
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-            return res.status(response.status).json(data);
-        }
-        
-        res.json(data);
-    } catch (error) {
-        console.error('Token exchange error:', error);
+        const data = await r.json();
+        res.status(r.ok ? 200 : r.status).json(data);
+    } catch (e) {
+        console.error('Token exchange error:', e);
         res.status(500).json({ error: 'Token exchange failed' });
     }
 });
 
-// Refresh access token
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH: refresh token
+// ─────────────────────────────────────────────────────────────────────────────
 app.post('/api/auth/refresh', async (req, res) => {
     const { refresh_token } = req.body;
-    
     try {
-        const params = new URLSearchParams({
-            grant_type: 'refresh_token',
-            client_id: TESLA_CONFIG.clientId,
-            client_secret: TESLA_CONFIG.clientSecret,
-            refresh_token: refresh_token
+        const r = await fetch(TESLA.tokenUrl, {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body   : new URLSearchParams({
+                grant_type   : 'refresh_token',
+                client_id    : TESLA.clientId,
+                client_secret: TESLA.clientSecret,
+                refresh_token
+            }).toString()
         });
-        
-        const response = await fetch(TESLA_CONFIG.tokenUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: params.toString()
-        });
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-            return res.status(response.status).json(data);
-        }
-        
-        res.json(data);
-    } catch (error) {
-        console.error('Token refresh error:', error);
+        const data = await r.json();
+        res.status(r.ok ? 200 : r.status).json(data);
+    } catch (e) {
+        console.error('Token refresh error:', e);
         res.status(500).json({ error: 'Token refresh failed' });
     }
 });
 
-// Proxy Tesla API requests
+// ─────────────────────────────────────────────────────────────────────────────
+// VEHICLES: list
+// ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/vehicles', async (req, res) => {
-    const accessToken = req.headers.authorization?.replace('Bearer ', '');
-    
-    if (!accessToken) {
-        return res.status(401).json({ error: 'No access token provided' });
-    }
-    
+    const token = bearerToken(req);
+    if (!token) return res.status(401).json({ error: 'No access token' });
     try {
-        const response = await fetch(`${TESLA_CONFIG.apiUrl}/vehicles`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        });
-        
-        const data = await response.json();
-        res.json(data);
-    } catch (error) {
-        console.error('API error:', error);
+        const { status, body } = await fleetGet('/vehicles', token);
+        res.status(status).json(body);
+    } catch (e) {
         res.status(500).json({ error: 'Failed to fetch vehicles' });
     }
 });
 
-// Get vehicle data
+// ─────────────────────────────────────────────────────────────────────────────
+// VEHICLES: full data (all sub-states)
+// ─────────────────────────────────────────────────────────────────────────────
 app.get('/api/vehicles/:id/vehicle_data', async (req, res) => {
-    const accessToken = req.headers.authorization?.replace('Bearer ', '');
-    const vehicleId = req.params.id;
-    
-    if (!accessToken) {
-        return res.status(401).json({ error: 'No access token provided' });
-    }
-    
+    const token = bearerToken(req);
+    if (!token) return res.status(401).json({ error: 'No access token' });
+    const endpoints = 'charge_state;climate_state;drive_state;vehicle_state;vehicle_config';
     try {
-        const response = await fetch(
-            `${TESLA_CONFIG.apiUrl}/vehicles/${vehicleId}/vehicle_data`,
-            {
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`
-                }
-            }
+        const { status, body } = await fleetGet(
+            `/vehicles/${req.params.id}/vehicle_data?endpoints=${encodeURIComponent(endpoints)}`,
+            token
         );
-        
-        const data = await response.json();
-        res.json(data);
-    } catch (error) {
-        console.error('API error:', error);
+        res.status(status).json(body);
+    } catch (e) {
         res.status(500).json({ error: 'Failed to fetch vehicle data' });
     }
 });
 
-const PORT = process.env.PORT || 3000;
-const HOST = '127.0.0.1';
-
-app.listen(PORT, HOST, () => {
-    console.log(`Backend server running on http://${HOST}:${PORT}`);
-    console.log(`Tesla OAuth credentials loaded from environment variables`);
-    console.log(`Client ID: ${TESLA_CONFIG.clientId ? TESLA_CONFIG.clientId.substring(0, 8) + '...' : 'NOT SET'}`);
-}).on('error', (err) => {
-    console.error('Failed to start server:', err.message);
-    if (err.code === 'EADDRINUSE') {
-        console.error(`Port ${PORT} is already in use. Please kill the process or use a different port.`);
+// ─────────────────────────────────────────────────────────────────────────────
+// VEHICLES: wake up
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/vehicles/:id/wake_up', async (req, res) => {
+    const token = bearerToken(req);
+    if (!token) return res.status(401).json({ error: 'No access token' });
+    try {
+        const { status, body } = await fleetPost(`/vehicles/${req.params.id}/wake_up`, token);
+        res.status(status).json(body);
+    } catch (e) {
+        res.status(500).json({ error: 'Wake up failed' });
     }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VEHICLES: generic command proxy  (lock, unlock, climate, etc.)
+// Body: { command: 'door_lock' | 'door_unlock' | 'auto_conditioning_start' | ... }
+// ─────────────────────────────────────────────────────────────────────────────
+app.post('/api/vehicles/:id/command', async (req, res) => {
+    const token = bearerToken(req);
+    if (!token) return res.status(401).json({ error: 'No access token' });
+    const { command, ...payload } = req.body || {};
+    if (!command) return res.status(400).json({ error: 'command is required' });
+    try {
+        const { status, body } = await fleetPost(
+            `/vehicles/${req.params.id}/command/${command}`, token, payload
+        );
+        res.status(status).json(body);
+    } catch (e) {
+        res.status(500).json({ error: 'Command failed' });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VEHICLES: nearby charging sites
+// ─────────────────────────────────────────────────────────────────────────────
+app.get('/api/vehicles/:id/nearby_charging_sites', async (req, res) => {
+    const token = bearerToken(req);
+    if (!token) return res.status(401).json({ error: 'No access token' });
+    try {
+        const { status, body } = await fleetGet(
+            `/vehicles/${req.params.id}/nearby_charging_sites`, token
+        );
+        res.status(status).json(body);
+    } catch (e) {
+        res.status(500).json({ error: 'Failed to fetch charging sites' });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// START
+// ─────────────────────────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '127.0.0.1', () => {
+    console.log(`Tesla Dashboard backend → http://127.0.0.1:${PORT}`);
+    console.log(`Fleet API base          → ${TESLA.fleetApiBase}`);
+    console.log(`Client ID               → ${TESLA.clientId ? TESLA.clientId.substring(0, 8) + '...' : 'NOT SET'}`);
+}).on('error', err => {
+    console.error('Server error:', err.message);
+    if (err.code === 'EADDRINUSE') console.error(`Port ${PORT} already in use.`);
     process.exit(1);
 });
