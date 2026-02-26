@@ -315,6 +315,7 @@ function flattenVehicleData(v) {
         locked              : vs.locked,
         sentry_mode         : vs.sentry_mode,
         software_version    : vs.car_version          || vs.software_update?.status || '--',
+        software_update     : vs.software_update       || null,
         tpms_pressure_fl    : vs.tpms_pressure_fl,
         tpms_pressure_fr    : vs.tpms_pressure_fr,
         tpms_pressure_rl    : vs.tpms_pressure_rl,
@@ -523,6 +524,22 @@ function loadTeslaVehicleInfo() {
     // Firmware version
     const fwEl = document.getElementById('firmwareVersion');
     if (fwEl) fwEl.textContent = d.software_version || '--';
+
+    // Firmware update status
+    const su = d.software_update;
+    const fwBar = document.getElementById('fwUpdateBar');
+    if (fwBar && su && su.status && su.status !== '') {
+        const fwInfo = document.getElementById('fwUpdateInfo');
+        const labels = { available: '⬆ Update available', scheduled: '⏱ Update scheduled',
+                         downloading: '⬇ Downloading…', installing: '⚙ Installing…' };
+        fwInfo.textContent = (labels[su.status] || su.status) + (su.version ? ` — v${su.version}` : '') +
+            (su.download_perc > 0 && su.download_perc < 100 ? ` (${su.download_perc}%)` : '') +
+            (su.install_perc  > 0 && su.install_perc  < 100 ? ` (${su.install_perc}%)`  : '');
+        document.getElementById('fwInstallBtn').classList.toggle('hidden', su.status !== 'available');
+        fwBar.classList.remove('hidden');
+    } else if (fwBar) {
+        fwBar.classList.add('hidden');
+    }
 
     // Tire pressures
     const tiresEl = document.getElementById('tiresSection');
@@ -1259,6 +1276,43 @@ function setupControls() {
     unlockBtn.addEventListener('click', () => runCmd(unlockBtn, 'door_unlock',  {}, 'Car unlocked'));
     flashBtn.addEventListener('click',  () => runCmd(flashBtn,  'flash_lights', {}, 'Lights flashed'));
     honkBtn.addEventListener('click',   () => runCmd(honkBtn,   'honk_horn',    {}, 'Honked!'));
+
+    // Firmware update buttons
+    const checkFwBtn  = document.getElementById('checkFwBtn');
+    const fwInstallBtn = document.getElementById('fwInstallBtn');
+
+    if (checkFwBtn) {
+        checkFwBtn.addEventListener('click', async () => {
+            checkFwBtn.textContent = 'Checking…';
+            checkFwBtn.disabled = true;
+            const raw = await fetchLiveData();
+            if (raw) {
+                LIVE_DATA = flattenVehicleData(raw);
+                loadTeslaVehicleInfo();
+                const su = LIVE_DATA.software_update;
+                if (!su || !su.status || su.status === '') {
+                    showToast('Software is up to date ✓');
+                } else {
+                    showToast(`Update status: ${su.status}${su.version ? ' — v' + su.version : ''}`);
+                }
+            } else {
+                showToast('Could not reach vehicle');
+            }
+            checkFwBtn.textContent = 'Check for Updates';
+            checkFwBtn.disabled = false;
+        });
+    }
+
+    if (fwInstallBtn) {
+        fwInstallBtn.addEventListener('click', async () => {
+            fwInstallBtn.textContent = 'Scheduling…';
+            fwInstallBtn.disabled = true;
+            const res = await sendCarCommand('schedule_software_update', { offset_sec: 0 });
+            showToast(res.ok ? 'Software update scheduled!' : (res.error || 'Could not schedule update'));
+            fwInstallBtn.textContent = 'Install Now';
+            fwInstallBtn.disabled = false;
+        });
+    }
 }
 
 // ── Charger Network Preferences ───────────────────────────────

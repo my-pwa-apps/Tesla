@@ -9,6 +9,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0d0d0d">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Tesla">
+    <link rel="apple-touch-icon" href="icon-192.svg">
 </head>
 <body>
     <div class="container">
@@ -145,6 +152,13 @@
                                 <span class="stat-value" id="firmwareVersion">--</span>
                             </div>
                         </div>
+
+                        <!-- Firmware update bar -->
+                        <div class="fw-update-bar hidden" id="fwUpdateBar">
+                            <div class="fw-update-info" id="fwUpdateInfo"></div>
+                            <button class="ctrl-btn small" id="fwInstallBtn">Install Now</button>
+                        </div>
+                        <button class="action-btn small fw-check-btn" id="checkFwBtn">Check for Updates</button>
 
                         <!-- Tire pressures -->
                         <div class="tires-section" id="tiresSection">
@@ -517,5 +531,12 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () =>
+                navigator.serviceWorker.register('/sw.js').catch(() => {})
+            );
+        }
+    </script>
 </body>
 </html>

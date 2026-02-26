@@ -1652,3 +1652,235 @@ header {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* ── Firmware Update Bar ─────────────────────────────────── */
+.fw-update-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 8px 10px;
+    background: rgba(227, 25, 55, 0.07);
+    border: 1px solid rgba(227, 25, 55, 0.3);
+    border-radius: 7px;
+}
+
+.fw-update-info {
+    font-size: 0.75rem;
+    color: var(--c-red);
+    line-height: 1.4;
+    flex: 1;
+}
+
+.fw-check-btn {
+    margin-top: 10px;
+    width: 100%;
+}
+
+/* ── Mobile / PWA Responsive ─────────────────────────────── */
+
+/* Base mobile improvements: Pixel 7 = 412 px portrait */
+@media (max-width: 480px) {
+    body {
+        font-size: 13px;
+    }
+
+    .container {
+        padding: 0 12px 24px;
+    }
+
+    header {
+        padding: 0 12px;
+        margin: 0 -12px 20px;
+    }
+
+    .header-content {
+        height: 52px;
+    }
+
+    .tesla-logo {
+        width: 72px;
+    }
+
+    /* Shrink connect button on small screens */
+    .connect-btn {
+        font-size: 0.68rem;
+        padding: 5px 10px;
+        gap: 5px;
+    }
+
+    /* Single-column grid */
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .tile {
+        padding: 18px 16px;
+    }
+
+    .tile-content {
+        min-height: 60px;
+    }
+
+    /* Battery */
+    .battery-level-large {
+        font-size: 3.2rem;
+    }
+
+    /* Controls tile — wrap buttons better */
+    .ctrl-row {
+        gap: 5px;
+    }
+
+    .ctrl-btn {
+        padding: 9px 8px;
+        font-size: 0.75rem;
+        min-width: 60px;
+    }
+
+    .ctrl-icon-btn {
+        width: 38px;
+        height: 38px;
+        font-size: 1.3rem;
+    }
+
+    /* Vehicle tile stat grid: 2 cols instead of auto */
+    .vehicle-stats {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    /* Navigation tile */
+    .nav-full-tile {
+        grid-column: 1;
+    }
+
+    .navigation-tile .tile-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        padding-bottom: 12px;
+        margin-bottom: 14px;
+    }
+
+    .nav-app-launchers {
+        width: 100%;
+        margin-left: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+
+    .nav-app-pill {
+        flex: 1 1 auto;
+        min-width: 70px;
+        text-align: center;
+        padding: 5px 8px;
+        font-size: 0.7rem;
+    }
+
+    .nav-quick-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+    }
+
+    .dest-btn {
+        padding: 8px 6px;
+        font-size: 0.72rem;
+    }
+
+    /* Nav map height reduced on mobile */
+    #navMap {
+        min-height: 220px;
+        height: 220px;
+    }
+
+    /* Tire grid */
+    .tires-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+    }
+
+    /* Settings tile */
+    .settings-list {
+        gap: 12px;
+    }
+
+    .pref-toggle-group {
+        gap: 5px;
+    }
+
+    .pref-toggle {
+        padding: 6px 9px;
+        font-size: 0.72rem;
+    }
+
+    /* Performance / speed display */
+    .speed-display {
+        font-size: 3.2rem;
+    }
+
+    .temp {
+        font-size: 2.8rem;
+    }
+
+    /* Trip tile */
+    .trip-stats {
+        gap: 10px;
+    }
+
+    /* Charger items */
+    .charger-item {
+        padding: 10px;
+    }
+
+    .charger-nav-btn {
+        width: 100%;
+        padding: 8px;
+    }
+
+    /* Toast bigger on mobile */
+    #appToast {
+        bottom: 24px;
+        left: 12px;
+        right: 12px;
+        transform: none;
+        max-width: none;
+        text-align: center;
+        font-size: 0.82rem;
+    }
+
+    #appToast.toast-visible {
+        transform: none;
+    }
+}
+
+/* Landscape phone */
+@media (max-width: 768px) and (orientation: landscape) {
+    .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .nav-full-tile {
+        grid-column: span 2;
+    }
+
+    #navMap {
+        height: 200px;
+        min-height: 200px;
+    }
+}
+
+/* Safe-area insets for punch-hole / notch phones */
+@supports (padding: env(safe-area-inset-top)) {
+    header {
+        padding-top: env(safe-area-inset-top);
+    }
+
+    .container {
+        padding-left:  max(12px, env(safe-area-inset-left));
+        padding-right: max(12px, env(safe-area-inset-right));
+        padding-bottom: max(24px, env(safe-area-inset-bottom));
+    }
+}
