@@ -32,7 +32,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const TESLA = {
     clientId     : process.env.TESLA_CLIENT_ID,
     clientSecret : process.env.TESLA_CLIENT_SECRET,
-    tokenUrl     : 'https://auth.tesla.com/oauth2/v3/token',
+    tokenUrl     : 'https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token',
     fleetApiBase : 'https://fleet-api.prd.eu.vn.cloud.tesla.com/api/1'
 };
 
