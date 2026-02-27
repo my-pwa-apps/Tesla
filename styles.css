@@ -21,6 +21,7 @@
     --c-red:         #e31937;
     --c-blue:        #3e6ae1;
     --c-white:       #ffffff;
+    --c-surface-3:   #2a2a2a;
     --radius-card:   10px;
     --radius-item:   6px;
     --radius-input:  6px;
@@ -413,6 +414,9 @@ header {
     max-height: 220px;
     overflow-y: auto;
     margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .nav-result-item {
@@ -1030,13 +1034,7 @@ header {
 .navigation-tile .nav-input::placeholder { color: var(--c-text-dim); }
 .navigation-tile .nav-input:focus { outline: none; border-color: #3e6ae1; }
 
-/* Results list */
-.nav-results {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
+/* Results list — inherits from main .nav-results */
 .nav-result-loading {
     padding: 14px;
     color: var(--c-text-muted);
@@ -1305,7 +1303,7 @@ header {
     border-radius: 20px;
     background: transparent;
     color: var(--c-text-muted);
-    font-family: var(--font);
+    font-family: inherit;
     font-size: 0.72rem;
     font-weight: 500;
     cursor: pointer;
@@ -1508,7 +1506,7 @@ header {
 }
 
 .ctrl-btn:hover:not(:disabled) {
-    background: var(--c-surface-3, #2a2a2a);
+    background: var(--c-surface-3);
     border-color: var(--c-border-hover);
 }
 
@@ -1549,7 +1547,7 @@ header {
     transition: background var(--transition);
 }
 
-.ctrl-icon-btn:hover { background: var(--c-surface-3, #2a2a2a); }
+.ctrl-icon-btn:hover { background: var(--c-surface-3); }
 
 .ctrl-temp-val {
     font-size: 1.1rem;

@@ -24,9 +24,17 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// ── Static files ──────────────────────────────────────────────────────────────
-app.use('/.well-known', express.static(path.join(__dirname, '.well-known')));
-app.use(express.static(path.join(__dirname, 'public')));
+// ── Security headers ──────────────────────────────────────────────────────
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+});
+
+// ── Static files ──────────────────────────────────────────────────────────
+app.use('/.well-known', express.static(path.join(__dirname, '.well-known'), { maxAge: '1d' }));
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 
 // ── Tesla config ──────────────────────────────────────────────────────────────
 const TESLA = {
@@ -166,6 +174,7 @@ app.get('/api/vehicles', async (req, res) => {
         const { status, body } = await fleetGet('/vehicles', token);
         res.status(status).json(body);
     } catch (e) {
+        if (e.name === 'AbortError') return res.status(504).json({ error: 'Tesla API timeout' });
         res.status(500).json({ error: 'Failed to fetch vehicles' });
     }
 });
@@ -176,6 +185,7 @@ app.get('/api/vehicles', async (req, res) => {
 app.get('/api/vehicles/:id/vehicle_data', async (req, res) => {
     const token = bearerToken(req);
     if (!token) return res.status(401).json({ error: 'No access token' });
+    if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'Invalid vehicle ID' });
     const endpoints = 'charge_state;climate_state;drive_state;vehicle_state;vehicle_config';
     try {
         const { status, body } = await fleetGet(
@@ -184,6 +194,7 @@ app.get('/api/vehicles/:id/vehicle_data', async (req, res) => {
         );
         res.status(status).json(body);
     } catch (e) {
+        if (e.name === 'AbortError') return res.status(504).json({ error: 'Tesla API timeout — vehicle may be asleep' });
         res.status(500).json({ error: 'Failed to fetch vehicle data' });
     }
 });
@@ -212,6 +223,7 @@ app.post('/api/vehicles/:id/wake_up', async (req, res) => {
         // Timed out but not necessarily an error — caller can still try vehicle_data
         res.json({ online: false, state: 'asleep' });
     } catch (e) {
+        if (e.name === 'AbortError') return res.status(504).json({ error: 'Tesla API timeout during wake' });
         console.error('wake_up error:', e.message);
         res.status(500).json({ error: 'Wake up failed', detail: e.message });
     }
@@ -232,6 +244,7 @@ app.post('/api/vehicles/:id/command', async (req, res) => {
         );
         res.status(status).json(body);
     } catch (e) {
+        if (e.name === 'AbortError') return res.status(504).json({ error: 'Tesla API timeout' });
         res.status(500).json({ error: 'Command failed' });
     }
 });
@@ -248,6 +261,7 @@ app.get('/api/vehicles/:id/nearby_charging_sites', async (req, res) => {
         );
         res.status(status).json(body);
     } catch (e) {
+        if (e.name === 'AbortError') return res.status(504).json({ error: 'Tesla API timeout' });
         res.status(500).json({ error: 'Failed to fetch charging sites' });
     }
 });
@@ -256,8 +270,9 @@ app.get('/api/vehicles/:id/nearby_charging_sites', async (req, res) => {
 // START
 // ─────────────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '127.0.0.1', () => {
-    console.log(`Tesla Dashboard backend → http://127.0.0.1:${PORT}`);
+const HOST = process.env.VERCEL ? '0.0.0.0' : '127.0.0.1';
+app.listen(PORT, HOST, () => {
+    console.log(`Tesla Dashboard backend → http://${HOST}:${PORT}`);
     console.log(`Fleet API base          → ${TESLA.fleetApiBase}`);
     console.log(`Client ID               → ${TESLA.clientId ? TESLA.clientId.substring(0, 8) + '...' : 'NOT SET'}`);
 }).on('error', err => {

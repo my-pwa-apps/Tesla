@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0d0d0d">
+    <meta name="description" content="Tesla Dashboard PWA – Battery, climate, navigation, charging and vehicle controls">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -148,7 +149,7 @@
                             <div class="stat-item">
                                 <span class="stat-label" data-i18n="sentry">Sentry</span>
                                 <span class="stat-value" id="sentryStatus">--</span>
-                            </div>                            <div class="stat-item">
+                            </div>                        <div class="stat-item">
                                 <span class="stat-label" data-i18n="software">Software</span>
                                 <span class="stat-value" id="firmwareVersion">--</span>
                             </div>
@@ -446,7 +447,7 @@
                     <div class="performance-stats">
                         <div class="perf-main">
                             <div class="speed-display" id="speedDisplay">0</div>
-                                <div class="speed-unit" id="speedUnit">km/h</div>
+                            <div class="speed-unit" id="speedUnit">km/h</div>
                         </div>
                         <div class="range-estimate">
                             <div class="range-label" data-i18n="estimated_range">Estimated Range</div>
@@ -549,11 +550,11 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="i18n.js"></script>
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=5"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () =>
-                navigator.serviceWorker.register('/sw.js').catch(() => {})
+                navigator.serviceWorker.register('sw.js').catch(() => {})
             );
         }
     </script>

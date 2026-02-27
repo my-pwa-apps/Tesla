@@ -1,6 +1,7 @@
 // ============================================================
 //  Tesla Dashboard – app.js
 // ============================================================
+'use strict';
 
 // ── Configuration ────────────────────────────────────────────
 
@@ -257,6 +258,7 @@ async function loadVehicles() {
 async function authedFetch(url, opts = {}) {
     if (AUTH.isExpired()) await AUTH.refresh();
     const token = AUTH.getAccessToken();
+    if (!token) throw new Error('No access token');
     return fetch(url, {
         ...opts,
         headers: {
@@ -394,9 +396,12 @@ function formatDistance(km) {
 
 // ── Clock ──────────────────────────────────────────────────────
 
+const LANG_LOCALE_MAP = { en: 'en-GB', nl: 'nl-NL', de: 'de-DE', fr: 'fr-FR', es: 'es-ES' };
+
 function updateTime() {
     const use12h = USER_PREFERENCES.timeFormat === '12h';
-    document.getElementById('currentTime').textContent = new Date().toLocaleString('en-GB', {
+    const locale = LANG_LOCALE_MAP[USER_PREFERENCES.uiLanguage] || 'en-GB';
+    document.getElementById('currentTime').textContent = new Date().toLocaleString(locale, {
         weekday: 'long', year: 'numeric', month: 'long',
         day: 'numeric', hour: '2-digit', minute: '2-digit',
         hour12: use12h
@@ -636,13 +641,12 @@ function loadPerformance() {
     // Trip Computer units — update suffixes to match current unit setting
     const effEl = document.getElementById('avgEfficiency');
     if (effEl) {
-        const num = parseFloat(effEl.textContent) || 245;
-        effEl.textContent = `${num} Wh/${isMiles ? 'mi' : 'km'}`;
+        const wh = parseFloat(effEl.dataset.whkm) || 245;
+        effEl.textContent = isMiles ? `${Math.round(wh * 1.60934)} Wh/mi` : `${Math.round(wh)} Wh/km`;
     }
 
     const distEl = document.getElementById('distanceToday');
     if (distEl) {
-        // Extract stored km value (dataset) and reformat
         if (!distEl.dataset.km) distEl.dataset.km = '0';
         distEl.textContent = formatDistance(parseFloat(distEl.dataset.km));
     }
@@ -696,6 +700,8 @@ async function loadAllTeslaData(forceDemo = false) {
             if (raw) {
                 LIVE_DATA = flattenVehicleData(raw);
                 renderAllTiles();
+            } else {
+                showToast(t('vehicle_unreachable'), 5000);
             }
             return;
         }
@@ -1203,15 +1209,17 @@ function handleQuickDestination(dest) {
         window.open('https://www.tesla.com/findus?v=2&filters=service', '_blank', 'noopener');
         return;
     }
-    const networkPattern = dest === 'supercharger' ? 'tesla' : dest === 'fastned' ? 'fastned' : null;
-    if (!networkPattern) return;
+    const matchFn = dest === 'supercharger'
+        ? n => /tesla|supercharger/i.test(n)
+        : dest === 'fastned' ? n => /fastned/i.test(n) : null;
+    if (!matchFn) return;
 
     navigator.geolocation.getCurrentPosition(async pos => {
         const { latitude: lat, longitude: lon } = pos.coords;
         showToast(t('searching'));
         try {
             const stations = await fetchNearbyChargers(lat, lon, 50);
-            const filtered = stations.filter(s => new RegExp(networkPattern, 'i').test(s.network));
+            const filtered = stations.filter(s => matchFn(s.network));
             filtered.forEach(s => { s.dist = haversineKm(lat, lon, s.lat, s.lon); });
             filtered.sort((a, b) => a.dist - b.dist);
             if (filtered.length) {
@@ -1540,9 +1548,10 @@ async function init() {
     // Auto-refresh live data every 5 minutes when connected
     setInterval(async () => {
         if (!AUTH.isLoggedIn()) return;
-        if (AUTH.isExpired()) await AUTH.refresh();
-        const raw = await fetchLiveData();
-        if (raw) { LIVE_DATA = flattenVehicleData(raw); renderAllTiles(); }
+        try {
+            const raw = await fetchLiveData();
+            if (raw) { LIVE_DATA = flattenVehicleData(raw); renderAllTiles(); }
+        } catch { /* network blip — retry next cycle */ }
     }, 5 * 60 * 1000);
 }
 

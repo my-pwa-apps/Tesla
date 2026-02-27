@@ -1,8 +1,8 @@
-const CACHE = 'tesla-dash-v5';
+const CACHE = 'tesla-dash-v6';
 const STATIC = [
     '/',
     '/index.html',
-    '/app.js?v=4',
+    '/app.js?v=5',
     '/i18n.js',
     '/styles.css',
     '/manifest.json',
@@ -13,6 +13,9 @@ const STATIC = [
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
 ];
+
+// App shell resources — always fetch from network first to get latest version
+const APP_SHELL = new Set(['/', '/index.html', '/app.js', '/i18n.js', '/styles.css']);
 
 self.addEventListener('install', e => {
     e.waitUntil(
@@ -40,10 +43,27 @@ self.addEventListener('fetch', e => {
         url.hostname.includes('overpass-api.de') ||
         url.hostname.includes('openstreetmap.org') ||
         url.hostname.includes('osrm.org') ||
-        url.hostname.includes('nominatim')) {
+        url.hostname.includes('nominatim') ||
+        url.hostname.includes('open-meteo.com')) {
         return; // fall through to network
     }
 
+    // Network-first for app shell (HTML/JS/CSS) — ensures fresh deploys arrive quickly
+    const pathname = url.pathname.replace(/\?.*$/, ''); // strip query string for matching
+    if (APP_SHELL.has(pathname)) {
+        e.respondWith(
+            fetch(request).then(resp => {
+                if (resp && resp.status === 200) {
+                    const clone = resp.clone();
+                    caches.open(CACHE).then(c => c.put(request, clone));
+                }
+                return resp;
+            }).catch(() => caches.match(request)) // offline → serve from cache
+        );
+        return;
+    }
+
+    // Cache-first for static assets (fonts, icons, leaflet)
     e.respondWith(
         caches.match(request).then(cached => {
             if (cached) return cached;
@@ -53,7 +73,7 @@ self.addEventListener('fetch', e => {
                     caches.open(CACHE).then(c => c.put(request, clone));
                 }
                 return resp;
-            }).catch(() => cached); // offline fallback to cache
+            });
         })
     );
 });
