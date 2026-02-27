@@ -1503,6 +1503,9 @@ header {
     font-family: inherit;
     cursor: pointer;
     transition: background var(--transition), border-color var(--transition);
+    touch-action: manipulation;       /* prevent double-tap zoom */
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .ctrl-btn:hover:not(:disabled) {
@@ -1513,6 +1516,18 @@ header {
 .ctrl-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* Confirmation state — pulsing border to draw attention */
+.ctrl-btn.ctrl-confirm {
+    border-color: #f59e0b;
+    color: #f59e0b;
+    animation: confirm-pulse 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes confirm-pulse {
+    from { border-color: #f59e0b; }
+    to   { border-color: #e31937; }
 }
 
 .ctrl-btn.small {
@@ -1544,6 +1559,7 @@ header {
     font-size: 1.2rem;
     cursor: pointer;
     user-select: none;
+    touch-action: manipulation;
     transition: background var(--transition);
 }
 
@@ -1566,6 +1582,7 @@ header {
 .ctrl-charge-row input[type="range"] {
     flex: 1;
     accent-color: #e31937;
+    touch-action: manipulation;
 }
 
 #ctrlChargeVal {

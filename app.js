@@ -3,6 +3,57 @@
 // ============================================================
 'use strict';
 
+// ── Scroll guard ──────────────────────────────────────────────
+// Suppress clicks/taps that occur during or right after a scroll gesture.
+// Prevents accidental button activations when the user is just scrolling
+// through the dashboard on touch devices.
+let _isScrolling = false;
+let _scrollTimer = null;
+window.addEventListener('scroll', () => {
+    _isScrolling = true;
+    clearTimeout(_scrollTimer);
+    _scrollTimer = setTimeout(() => { _isScrolling = false; }, 300);
+}, { passive: true });
+
+// Returns true if a touch event looks like it was part of a scroll gesture
+function isScrollTap() { return _isScrolling; }
+
+// ── Confirm-tap pattern ───────────────────────────────────────
+// Critical buttons require a second tap within 3 s to actually fire.
+// First tap changes the label to "Tap to confirm" / the i18n equivalent.
+const _confirmTimers = new WeakMap();
+function requireConfirmTap(btn, callback) {
+    btn.addEventListener('click', e => {
+        if (isScrollTap()) return;           // swipe, not a tap
+        if (btn.disabled) return;
+
+        // Already in confirmation state → execute
+        if (btn.dataset.confirming === '1') {
+            btn.dataset.confirming = '';
+            btn.classList.remove('ctrl-confirm');
+            clearTimeout(_confirmTimers.get(btn));
+            // Restore original label (stored on first tap)
+            btn.textContent = btn.dataset.origLabel || btn.textContent;
+            callback();
+            return;
+        }
+
+        // First tap → enter confirmation state
+        btn.dataset.origLabel = btn.textContent;
+        btn.dataset.confirming = '1';
+        btn.textContent = t('tap_confirm');
+        btn.classList.add('ctrl-confirm');
+
+        // Auto-cancel after 3 s
+        const timer = setTimeout(() => {
+            btn.dataset.confirming = '';
+            btn.classList.remove('ctrl-confirm');
+            btn.textContent = btn.dataset.origLabel || btn.textContent;
+        }, 3000);
+        _confirmTimers.set(btn, timer);
+    });
+}
+
 // ── Configuration ────────────────────────────────────────────
 
 const BACKEND_URL = (() => {
@@ -1370,12 +1421,12 @@ function setupControls() {
         }
     }
 
-    climateBtn.addEventListener('click', async () => {
+    requireConfirmTap(climateBtn, async () => {
         const on = climateBtn.classList.contains('ctrl-active');
         await runCmd(climateBtn, on ? 'auto_conditioning_stop' : 'auto_conditioning_start', {}, on ? t('climate_off') : t('climate_on'));
     });
 
-    precondBtn.addEventListener('click', async () => {
+    requireConfirmTap(precondBtn, async () => {
         const ok = await preconditionBattery();
         showToast(ok ? t('precond_started') : t('precond_failed'));
     });
@@ -1385,14 +1436,14 @@ function setupControls() {
         document.getElementById('ctrlTempDisplay').textContent = formatTemperature(_ctrlTemp);
     }
 
-    tempDownBtn.addEventListener('click', () => adjustTemp(-0.5));
-    tempUpBtn.addEventListener('click',   () => adjustTemp(0.5));
+    tempDownBtn.addEventListener('click', () => { if (!isScrollTap()) adjustTemp(-0.5); });
+    tempUpBtn.addEventListener('click',   () => { if (!isScrollTap()) adjustTemp(0.5); });
 
     let _tempTimer;
     [tempDownBtn, tempUpBtn].forEach(btn => {
         const delta = btn === tempDownBtn ? -0.5 : 0.5;
-        btn.addEventListener('mousedown', () => { _tempTimer = setInterval(() => adjustTemp(delta), 180); });
-        btn.addEventListener('touchstart', e => { e.preventDefault(); _tempTimer = setInterval(() => adjustTemp(delta), 180); }, { passive: false });
+        btn.addEventListener('mousedown', () => { if (!isScrollTap()) _tempTimer = setInterval(() => adjustTemp(delta), 180); });
+        btn.addEventListener('touchstart', e => { if (isScrollTap()) return; e.preventDefault(); _tempTimer = setInterval(() => adjustTemp(delta), 180); }, { passive: false });
         ['mouseup', 'mouseleave', 'touchend'].forEach(ev => btn.addEventListener(ev, () => {
             clearInterval(_tempTimer);
             sendCarCommand('set_temps', { driver_temp: _ctrlTemp, passenger_temp: _ctrlTemp })
@@ -1403,14 +1454,14 @@ function setupControls() {
     chargeSlider.addEventListener('input', () => {
         chargeVal.textContent = `${chargeSlider.value}%`;
     });
-    chargeSet.addEventListener('click', () => {
+    requireConfirmTap(chargeSet, () => {
         runCmd(chargeSet, 'set_charge_limit', { percent: parseInt(chargeSlider.value) }, `${t('ctrl_charge_limit')}: ${chargeSlider.value}%`);
     });
 
-    lockBtn.addEventListener('click',   () => runCmd(lockBtn,   'door_lock',    {}, t('car_locked')));
-    unlockBtn.addEventListener('click', () => runCmd(unlockBtn, 'door_unlock',  {}, t('car_unlocked')));
-    flashBtn.addEventListener('click',  () => runCmd(flashBtn,  'flash_lights', {}, t('lights_flashed')));
-    honkBtn.addEventListener('click',   () => runCmd(honkBtn,   'honk_horn',    {}, t('honked')));
+    requireConfirmTap(lockBtn,   () => runCmd(lockBtn,   'door_lock',    {}, t('car_locked')));
+    requireConfirmTap(unlockBtn, () => runCmd(unlockBtn, 'door_unlock',  {}, t('car_unlocked')));
+    requireConfirmTap(flashBtn,  () => runCmd(flashBtn,  'flash_lights', {}, t('lights_flashed')));
+    requireConfirmTap(honkBtn,   () => runCmd(honkBtn,   'honk_horn',    {}, t('honked')));
 
     // Firmware update buttons
     const checkFwBtn  = document.getElementById('checkFwBtn');
@@ -1439,7 +1490,7 @@ function setupControls() {
     }
 
     if (fwInstallBtn) {
-        fwInstallBtn.addEventListener('click', async () => {
+        requireConfirmTap(fwInstallBtn, async () => {
             fwInstallBtn.textContent = t('scheduling');
             fwInstallBtn.disabled = true;
             const res = await sendCarCommand('schedule_software_update', { offset_sec: 0 });
