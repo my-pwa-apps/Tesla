@@ -73,6 +73,8 @@ const MOCK_TESLA_DATA = {
 
 // Live data cache – populated from real API when connected
 let LIVE_DATA = null;
+let _lastFetchTime = 0;   // timestamp of last successful vehicle_data fetch
+const DATA_TTL = 60_000;  // consider data fresh for 60 seconds
 
 // ── Token helpers ────────────────────────────────────────────
 
@@ -270,13 +272,23 @@ async function authedFetch(url, opts = {}) {
 
 // ── Vehicle data fetch ────────────────────────────────────────
 
-async function fetchLiveData() {
+/**
+ * Fetch vehicle data from Tesla API.
+ * @param {boolean} force - bypass freshness check
+ * Returns raw API response or null on failure.
+ */
+async function fetchLiveData(force = false) {
     const vid = AUTH.getVehicleId();
     if (!vid) return null;
+    // Skip if data is still fresh (saves API calls = money)
+    if (!force && LIVE_DATA && (Date.now() - _lastFetchTime) < DATA_TTL) {
+        return null; // null signals "no new data" — caller keeps existing LIVE_DATA
+    }
     try {
         const r = await authedFetch(`${BACKEND_URL}/api/vehicles/${vid}/vehicle_data`);
         if (!r.ok) return null;
         const json = await r.json();
+        _lastFetchTime = Date.now();
         return json.response || json;
     } catch { return null; }
 }
@@ -696,7 +708,7 @@ async function loadAllTeslaData(forceDemo = false) {
             } catch { /* network error: still try vehicle_data */ }
 
             dismissToast();
-            const raw = await fetchLiveData();
+            const raw = await fetchLiveData(true); // force — first fetch after wake
             if (raw) {
                 LIVE_DATA = flattenVehicleData(raw);
                 renderAllTiles();
@@ -755,6 +767,16 @@ out center tags;`;
         };
     }).filter(s => s.lat && s.lon);
 }
+
+// Commands that change vehicle state and warrant a data re-fetch
+const STATE_CHANGING_CMDS = new Set([
+    'auto_conditioning_start', 'auto_conditioning_stop',
+    'set_temps', 'set_charge_limit',
+    'charge_start', 'charge_stop',
+    'door_lock', 'door_unlock',
+    'set_sentry_mode', 'schedule_software_update',
+    'actuate_trunk'
+]);
 
 async function sendCarCommand(command, params = {}) {
     const id = localStorage.getItem('tesla_vehicle_id');
@@ -1283,7 +1305,7 @@ function setupSettings() {
         refreshBtn.textContent = t('refreshing');
         refreshBtn.disabled    = true;
         if (AUTH.isLoggedIn()) {
-            const raw = await fetchLiveData();
+            const raw = await fetchLiveData(true); // explicit user action → force
             if (raw) LIVE_DATA = flattenVehicleData(raw);
         }
         loadWeather();
@@ -1340,8 +1362,10 @@ function setupControls() {
         showToast(res.ok ? successMsg : (res.error || t('cmd_failed')));
         btn.textContent = orig;
         btn.disabled = false;
-        if (res.ok) {
-            const raw = await fetchLiveData();
+        // Only re-fetch vehicle data for commands that change state
+        // flash_lights, honk_horn etc. don't need a re-read (saves API calls)
+        if (res.ok && STATE_CHANGING_CMDS.has(command)) {
+            const raw = await fetchLiveData(true);
             if (raw) { LIVE_DATA = flattenVehicleData(raw); updateControlsUI(); }
         }
     }
@@ -1396,7 +1420,7 @@ function setupControls() {
         checkFwBtn.addEventListener('click', async () => {
             checkFwBtn.textContent = t('checking');
             checkFwBtn.disabled = true;
-            const raw = await fetchLiveData();
+            const raw = await fetchLiveData(true); // user-initiated → force
             if (raw) {
                 LIVE_DATA = flattenVehicleData(raw);
                 loadTeslaVehicleInfo();
@@ -1545,14 +1569,15 @@ async function init() {
     setupControls();
     setupChargerPrefs();
 
-    // Auto-refresh live data every 5 minutes when connected
+    // Auto-refresh live data every 30 minutes when connected
+    // Tesla charges per API call — keep this infrequent
     setInterval(async () => {
         if (!AUTH.isLoggedIn()) return;
         try {
-            const raw = await fetchLiveData();
+            const raw = await fetchLiveData(); // respects DATA_TTL
             if (raw) { LIVE_DATA = flattenVehicleData(raw); renderAllTiles(); }
         } catch { /* network blip — retry next cycle */ }
-    }, 5 * 60 * 1000);
+    }, 30 * 60 * 1000);
 }
 
 init();

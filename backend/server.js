@@ -209,10 +209,13 @@ app.post('/api/vehicles/:id/wake_up', async (req, res) => {
         // Send the initial wake command
         await fleetPost(`/vehicles/${req.params.id}/wake_up`, token);
 
-        // Poll vehicle state until 'online' (max 12 attempts × 2.5 s = 30 s)
-        const delay = ms => new Promise(ok => setTimeout(ok, ms));
-        for (let i = 0; i < 12; i++) {
-            await delay(2500);
+        // Poll vehicle state until 'online'
+        // Use exponential-ish delays: 3s, 4s, 5s, 6s, 7s = 5 polls × 25s total
+        // (much cheaper than 12 × 2.5s = 12 API calls)
+        const delays = [3000, 4000, 5000, 6000, 7000];
+        const sleep = ms => new Promise(ok => setTimeout(ok, ms));
+        for (const ms of delays) {
+            await sleep(ms);
             const { status, body } = await fleetGet(`/vehicles/${req.params.id}`, token);
             const state = body?.response?.state;
             if (state === 'online') {
