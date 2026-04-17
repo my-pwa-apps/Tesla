@@ -71,18 +71,29 @@
                 window.location.href = '/index.html?error=' + error;
             }, 3000);
         } else if (code && state) {
-            // Pass the code back to the main app
-            // In a real implementation, you would exchange this on the backend
-            window.opener.postMessage({
-                type: 'tesla_oauth_callback',
-                code: code,
-                state: state
-            }, '*');
-            
-            // Close this window after a moment
-            setTimeout(() => {
-                window.close();
-            }, 1000);
+            if (window.opener) {
+                // Pass the code back to the main app — only to allowed origins
+                var ALLOWED_ORIGINS = [
+                    'https://my-pwa-apps.github.io',
+                    'https://bart-gilt-delta.vercel.app',
+                    'http://localhost:5500',
+                    'http://localhost:3000'
+                ];
+                ALLOWED_ORIGINS.forEach(function(origin) {
+                    window.opener.postMessage({
+                        type: 'tesla_oauth_callback',
+                        code: code,
+                        state: state
+                    }, origin);
+                });
+                // Close this window after a moment
+                setTimeout(() => { window.close(); }, 1000);
+            } else {
+                // Fallback: no opener (e.g. redirect flow) — store and redirect
+                sessionStorage.setItem('tesla_oauth_code', code);
+                sessionStorage.setItem('tesla_oauth_state', state);
+                window.location.href = '/';
+            }
         } else {
             document.querySelector('h2').textContent = 'Invalid Callback';
             document.querySelector('p').textContent = 'Missing required parameters';

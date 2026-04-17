@@ -51,12 +51,16 @@
             document.querySelector('p').textContent  = error;
             document.querySelector('.spinner').style.display = 'none';
             if (window.opener) {
-                window.opener.postMessage({ type: 'tesla_oauth_callback', error }, '*');
+                ['https://my-pwa-apps.github.io','https://bart-gilt-delta.vercel.app','http://localhost:5500','http://localhost:3000'].forEach(origin => {
+                    window.opener.postMessage({ type: 'tesla_oauth_callback', error }, origin);
+                });
                 setTimeout(() => window.close(), 2000);
             }
         } else if (code && state) {
             if (window.opener) {
-                window.opener.postMessage({ type: 'tesla_oauth_callback', code, state }, '*');
+                ['https://my-pwa-apps.github.io','https://bart-gilt-delta.vercel.app','http://localhost:5500','http://localhost:3000'].forEach(origin => {
+                    window.opener.postMessage({ type: 'tesla_oauth_callback', code, state }, origin);
+                });
                 setTimeout(() => window.close(), 800);
             } else {
                 // Fallback: no opener (e.g. redirect flow) – store and redirect back

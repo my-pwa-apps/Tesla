@@ -207,7 +207,7 @@ async function initOAuth() {
 async function connectTesla() {
     await initOAuth();
     if (!TESLA_OAUTH.clientId) {
-        alert('Backend unavailable – cannot connect.');
+        showModal(t('connect_tesla'), t('backend_unavail'), [{ label: t('ok_btn') }]);
         return;
     }
 
@@ -235,8 +235,15 @@ async function connectTesla() {
 }
 
 // Receive code back from callback popup
+const CALLBACK_ORIGINS = new Set([
+    'https://my-pwa-apps.github.io',
+    'https://bart-gilt-delta.vercel.app',
+    'http://localhost:5500',
+    'http://localhost:3000'
+]);
 window.addEventListener('message', async e => {
     if (e.data?.type !== 'tesla_oauth_callback') return;
+    if (!CALLBACK_ORIGINS.has(e.origin)) return;
     const { code, state } = e.data;
 
     const savedState   = sessionStorage.getItem('oauth_state');
@@ -290,7 +297,7 @@ async function loadVehicles() {
                 console.warn('Token lacks Fleet API audience — clearing auth, please reconnect.');
                 AUTH.clear();
                 updateConnectUI('idle');
-                alert('Your session token needs to be refreshed.\nPlease click "Connect Tesla" again to re-authenticate.');
+                showModal(t('connect_tesla'), t('session_expired'), [{ label: t('ok_btn') }]);
             }
             return;
         }
@@ -298,11 +305,15 @@ async function loadVehicles() {
         const list = data.response || data;
         if (!Array.isArray(list) || !list.length) return;
 
-        // Auto-select first vehicle
-        const v = list[0];
-        const id = v.id_s || String(v.id);
-        localStorage.setItem('tesla_vehicle_id',   id);
-        localStorage.setItem('tesla_vehicle_name', v.display_name || 'Tesla');
+        // If multiple vehicles, let user pick
+        if (list.length > 1) {
+            await showVehiclePicker(list);
+        } else {
+            const v = list[0];
+            const id = v.id_s || String(v.id);
+            localStorage.setItem('tesla_vehicle_id',   id);
+            localStorage.setItem('tesla_vehicle_name', v.display_name || 'Tesla');
+        }
     } catch { /* ignore */ }
 }
 
@@ -408,7 +419,7 @@ function updateConnectUI(state) {
     if (state === 'connected') {
         btn.innerHTML = `
             <span class="connect-dot connected"></span>
-            ${AUTH.getVehicleName()}`;
+            ${escapeHtml(AUTH.getVehicleName())}`;
         btn.classList.add('is-connected');
         btn.title = 'Click to disconnect';
         btn.onclick = disconnectTesla;
@@ -429,12 +440,15 @@ function updateConnectUI(state) {
 }
 
 function disconnectTesla() {
-    if (!confirm('Disconnect Tesla account?')) return;
-    AUTH.clear();
-    updateConnectUI('idle');
-    LIVE_DATA = null;
-    // Re-render all tiles with demo data
-    loadAllTeslaData(true);
+    showModal(t('disconnect_title'), t('disconnect_msg'), [
+        { label: t('cancel_btn') },
+        { label: t('disconnect_btn'), cls: 'modal-btn-danger', action: () => {
+            AUTH.clear();
+            updateConnectUI('idle');
+            LIVE_DATA = null;
+            loadAllTeslaData(true);
+        }}
+    ]);
 }
 
 // ── Utilities ─────────────────────────────────────────────────
@@ -457,6 +471,13 @@ function formatDistance(km) {
     return `${km.toFixed(1)} km`;
 }
 
+function escapeHtml(str) {
+    if (!str) return '';
+    const el = document.createElement('span');
+    el.textContent = str;
+    return el.innerHTML;
+}
+
 // ── Clock ──────────────────────────────────────────────────────
 
 const LANG_LOCALE_MAP = { en: 'en-GB', nl: 'nl-NL', de: 'de-DE', fr: 'fr-FR', es: 'es-ES' };
@@ -470,8 +491,7 @@ function updateTime() {
         hour12: use12h
     });
 }
-updateTime();
-setInterval(updateTime, 1000);
+startClock();
 
 // ── Weather ────────────────────────────────────────────────────
 
@@ -506,15 +526,15 @@ async function renderWeather(lat, lon, label) {
 
 function getWeatherDescription(code) {
     const map = {
-        0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',
-        45:'Fog',48:'Fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',
-        61:'Light rain',63:'Rain',65:'Heavy rain',
-        71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',
-        80:'Light showers',81:'Showers',82:'Heavy showers',
-        85:'Snow showers',86:'Heavy snow showers',
-        95:'Thunderstorm',96:'Thunderstorm + hail',99:'Thunderstorm + heavy hail'
+        0:'w_clear',1:'w_mainly_clear',2:'w_partly_cloudy',3:'w_overcast',
+        45:'w_fog',48:'w_fog',51:'w_drizzle_light',53:'w_drizzle',55:'w_drizzle_heavy',
+        61:'w_rain_light',63:'w_rain',65:'w_rain_heavy',
+        71:'w_snow_light',73:'w_snow',75:'w_snow_heavy',77:'w_snow_grains',
+        80:'w_showers_light',81:'w_showers',82:'w_showers_heavy',
+        85:'w_snow_showers',86:'w_snow_showers_h',
+        95:'w_thunderstorm',96:'w_thunder_hail',99:'w_thunder_hail_h'
     };
-    return map[code] || 'Unknown';
+    return t(map[code] || 'w_unknown');
 }
 
 // ── Tesla: Battery & Charging ─────────────────────────────────
@@ -566,9 +586,9 @@ function loadTeslaClimate() {
     document.getElementById('outsideTemp').textContent = formatTemperature(d.outside_temp);
 
     const status = document.getElementById('climateStatus');
-    const label  = d.is_preconditioning ? 'Pre-conditioning'
-                 : d.is_climate_on      ? 'Climate On'
-                 : 'Climate Off';
+    const label  = d.is_preconditioning ? t('pre_conditioning')
+                 : d.is_climate_on      ? t('climate_on_label')
+                 : t('climate_off_label');
     status.textContent = label;
     status.style.color = (d.is_climate_on || d.is_preconditioning) ? '#fff' : 'var(--c-text-muted)';
 
@@ -588,11 +608,27 @@ function loadTeslaVehicleInfo() {
     document.getElementById('vehicleName').textContent  = d.vehicle_name || '--';
     document.getElementById('odometer').textContent     =
         d.odometer != null ? formatDistance(d.odometer * 1.60934) : '--';
-    document.getElementById('lockStatus').textContent   = d.locked   ? 'Locked'  : 'Unlocked';
-    document.getElementById('sentryStatus').textContent = d.sentry_mode ? 'Active' : 'Off';
+    document.getElementById('lockStatus').textContent   = d.locked ? t('status_locked') : t('status_unlocked');
+    document.getElementById('sentryStatus').textContent = d.sentry_mode ? t('status_active') : t('status_off');
 
     document.getElementById('lockStatus').style.color   = d.locked ? 'var(--c-text)' : '#f59e0b';
     document.getElementById('sentryStatus').style.color = d.sentry_mode ? 'var(--c-text)' : 'var(--c-text-muted)';
+
+    // Door open warnings
+    const doorWarningEl = document.getElementById('doorWarnings');
+    if (doorWarningEl) {
+        const openDoors = [];
+        if (d.df) openDoors.push(t('door_fl'));
+        if (d.pf) openDoors.push(t('door_fr'));
+        if (d.dr) openDoors.push(t('door_rl'));
+        if (d.pr) openDoors.push(t('door_rr'));
+        if (openDoors.length) {
+            doorWarningEl.textContent = `⚠ ${openDoors.join(', ')} ${t('door_open_warning').toLowerCase()}`;
+            doorWarningEl.classList.remove('hidden');
+        } else {
+            doorWarningEl.classList.add('hidden');
+        }
+    }
 
     // Firmware version
     const fwEl = document.getElementById('firmwareVersion');
@@ -701,7 +737,7 @@ function loadPerformance() {
         barEl.style.background = power < 0 ? '#22c55e' : 'var(--c-red)';
     }
 
-    // Trip Computer units — update suffixes to match current unit setting
+    // Trip Computer — update with real data
     const effEl = document.getElementById('avgEfficiency');
     if (effEl) {
         const wh = parseFloat(effEl.dataset.whkm) || 245;
@@ -713,6 +749,9 @@ function loadPerformance() {
         if (!distEl.dataset.km) distEl.dataset.km = '0';
         distEl.textContent = formatDistance(parseFloat(distEl.dataset.km));
     }
+
+    // Update trip data from live odometer
+    updateTripComputer(d);
 }
 
 // Show car's real GPS position on the nav map
@@ -744,7 +783,7 @@ async function loadAllTeslaData(forceDemo = false) {
             renderAllTiles();
 
             try {
-                showToast('Waking vehicle\u2026', 35000);
+                showToast(t('waking_vehicle'), 35000);
                 const wr = await authedFetch(
                     `${BACKEND_URL}/api/vehicles/${vid}/wake_up`, { method: 'POST' }
                 );
@@ -781,6 +820,7 @@ function renderAllTiles() {
     loadDriveState();
     updateControlsUI();
     loadPerformance();
+    updateLastUpdated();
 }
 
 // ── Charging Stations ──────────────────────────────────────────
@@ -933,11 +973,11 @@ async function findChargers() {
                 el.className = 'charger-item';
                 el.innerHTML = `
                     <div class="charger-item-header">
-                        <span class="charger-badge ${badgeClass}">${badgeLabel}</span>
-                        <span class="charger-dist">${s.dist.toFixed(1)} km</span>
+                        <span class="charger-badge ${badgeClass}">${escapeHtml(badgeLabel)}</span>
+                        <span class="charger-dist">${formatDistance(s.dist)}</span>
                     </div>
-                    <div class="charger-name">${s.name}</div>
-                    ${s.sockets ? `<div class="charger-distance">${s.sockets} sockets</div>` : ''}
+                    <div class="charger-name">${escapeHtml(s.name)}</div>
+                    ${s.sockets ? `<div class="charger-distance">${escapeHtml(String(s.sockets))} sockets</div>` : ''}
                 `;
                 const navBtn = document.createElement('button');
                 navBtn.className = 'charger-nav-btn';
@@ -1046,8 +1086,8 @@ async function searchDestination(query) {
             const el = document.createElement('div');
             el.className = 'nav-result-item';
             el.innerHTML = `
-                <div class="result-name">${name}</div>
-                <div class="result-coords">${subtext}</div>
+                <div class="result-name">${escapeHtml(name)}</div>
+                <div class="result-coords">${escapeHtml(subtext)}</div>
             `;
             el.addEventListener('click', () => selectDestination({
                 lat: parseFloat(place.lat), lon: parseFloat(place.lon), name, address: place.display_name
@@ -1135,7 +1175,7 @@ function openInApp(app) {
                 here:'https://wego.here.com', abrp:'https://abetterrouteplanner.com' }[app];
     }
 
-    if (url) window.open(url, '_blank', 'noopener');
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 // ── Saved / Recent ────────────────────────────────────────────
@@ -1176,13 +1216,7 @@ function clearRecent() {
     renderRecent();
 }
 
-window.navGoTo  = destJson => selectDestinationAndSwitch(JSON.parse(decodeURIComponent(destJson)));
-window.navDelete = deleteSaved;
-window.navSave  = destJson => saveLocation(JSON.parse(decodeURIComponent(destJson)));
-
-function destAttr(dest) {
-    return encodeURIComponent(JSON.stringify({ lat: dest.lat, lon: dest.lon, name: dest.name, address: dest.address }));
-}
+// navGoTo / navDelete / navSave removed — inline onclick handlers replaced with addEventListener
 
 function renderSaved() {
     const items = getSaved();
@@ -1190,17 +1224,23 @@ function renderSaved() {
     const empty = document.getElementById('savedEmpty');
     if (!items.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
-    list.innerHTML = items.map(s => `
+    list.innerHTML = items.map((s, i) => `
         <div class="nav-list-item">
             <div class="nav-list-body">
-                <div class="nav-list-name">${s.name}</div>
-                <div class="nav-list-sub">${s.address.split(', ').slice(1, 3).join(', ')}</div>
+                <div class="nav-list-name">${escapeHtml(s.name)}</div>
+                <div class="nav-list-sub">${escapeHtml(s.address.split(', ').slice(1, 3).join(', '))}</div>
             </div>
             <div class="nav-list-actions">
-                <button class="nav-list-btn go-btn"  onclick="navGoTo('${destAttr(s)}')">${t('go')}</button>
-                <button class="nav-list-btn del-btn" onclick="navDelete(${s.id})">&#215;</button>
+                <button class="nav-list-btn go-btn" data-idx="${i}">${t('go')}</button>
+                <button class="nav-list-btn del-btn" data-id="${s.id}">&#215;</button>
             </div>
         </div>`).join('');
+    list.querySelectorAll('.go-btn').forEach(btn => {
+        btn.addEventListener('click', () => selectDestinationAndSwitch(items[parseInt(btn.dataset.idx)]));
+    });
+    list.querySelectorAll('.del-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteSaved(parseInt(btn.dataset.id)));
+    });
 }
 
 function renderRecent() {
@@ -1209,17 +1249,23 @@ function renderRecent() {
     const empty = document.getElementById('recentEmpty');
     if (!items.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
     empty.classList.add('hidden');
-    list.innerHTML = items.map(r => `
+    list.innerHTML = items.map((r, i) => `
         <div class="nav-list-item">
             <div class="nav-list-body">
-                <div class="nav-list-name">${r.name}</div>
-                <div class="nav-list-sub">${r.address.split(', ').slice(1, 3).join(', ')}</div>
+                <div class="nav-list-name">${escapeHtml(r.name)}</div>
+                <div class="nav-list-sub">${escapeHtml(r.address.split(', ').slice(1, 3).join(', '))}</div>
             </div>
             <div class="nav-list-actions">
-                <button class="nav-list-btn go-btn"   onclick="navGoTo('${destAttr(r)}')">${t('go')}</button>
-                <button class="nav-list-btn save-btn" onclick="navSave('${destAttr(r)}')">${t('save_btn')}</button>
+                <button class="nav-list-btn go-btn" data-idx="${i}">${t('go')}</button>
+                <button class="nav-list-btn save-btn" data-idx="${i}">${t('save_btn')}</button>
             </div>
         </div>`).join('');
+    list.querySelectorAll('.go-btn').forEach(btn => {
+        btn.addEventListener('click', () => selectDestinationAndSwitch(items[parseInt(btn.dataset.idx)]));
+    });
+    list.querySelectorAll('.save-btn').forEach(btn => {
+        btn.addEventListener('click', () => saveLocation(items[parseInt(btn.dataset.idx)]));
+    });
 }
 
 function selectDestinationAndSwitch(dest) {
@@ -1279,7 +1325,7 @@ function switchNavTab(tab) {
 
 function handleQuickDestination(dest) {
     if (dest === 'service') {
-        window.open('https://www.tesla.com/findus?v=2&filters=service', '_blank', 'noopener');
+        window.open('https://www.tesla.com/findus?v=2&filters=service', '_blank', 'noopener,noreferrer');
         return;
     }
     const matchFn = dest === 'supercharger'
@@ -1373,14 +1419,25 @@ function updateControlsUI() {
     const climateBtn = document.getElementById('ctrlClimateToggle');
     if (!climateBtn) return;
 
-    if (!AUTH.isLoggedIn() || !LIVE_DATA) {
+    const disconnected = !AUTH.isLoggedIn() || !LIVE_DATA;
+
+    // Disable all control buttons when not connected
+    const allCtrlBtns = document.querySelectorAll('#controlsTile .ctrl-btn, #controlsTile .ctrl-icon-btn');
+    const overlay = document.getElementById('ctrlOverlay');
+    if (disconnected) {
+        allCtrlBtns.forEach(b => b.disabled = true);
+        if (overlay) overlay.classList.remove('hidden');
         climateBtn.textContent = `${t('ctrl_climate')}: ---`;
         document.getElementById('ctrlTempDisplay').textContent = '---';
+        document.getElementById('ctrlChargeSlider').disabled = true;
         return;
     }
+    allCtrlBtns.forEach(b => b.disabled = false);
+    document.getElementById('ctrlChargeSlider').disabled = false;
+    if (overlay) overlay.classList.add('hidden');
 
     const on = LIVE_DATA.is_climate_on || LIVE_DATA.is_auto_conditioning_on;
-    climateBtn.textContent = `${t('ctrl_climate')}: ${on ? 'ON' : 'OFF'}`;
+    climateBtn.textContent = `${t('ctrl_climate')}: ${on ? t('status_on') : t('status_off')}`;
     climateBtn.classList.toggle('ctrl-active', !!on);
 
     const temp = LIVE_DATA.driver_temp_setting ?? LIVE_DATA.inside_temp ?? 21;
@@ -1390,6 +1447,23 @@ function updateControlsUI() {
     const limit = LIVE_DATA.charge_limit_soc ?? 80;
     document.getElementById('ctrlChargeSlider').value = limit;
     document.getElementById('ctrlChargeVal').textContent = `${limit}%`;
+
+    // Sentry toggle state
+    const sentryBtn = document.getElementById('ctrlSentry');
+    if (sentryBtn) {
+        sentryBtn.textContent = `${t('ctrl_sentry')}: ${LIVE_DATA.sentry_mode ? t('status_on') : t('status_off')}`;
+        sentryBtn.classList.toggle('ctrl-active', !!LIVE_DATA.sentry_mode);
+    }
+
+    // Charge start/stop visibility
+    const startChargeBtn = document.getElementById('ctrlStartCharge');
+    const stopChargeBtn = document.getElementById('ctrlStopCharge');
+    if (startChargeBtn && stopChargeBtn) {
+        const charging = LIVE_DATA.charging_state === 'Charging';
+        const pluggedIn = LIVE_DATA.charging_state && LIVE_DATA.charging_state !== 'Disconnected';
+        startChargeBtn.classList.toggle('hidden', charging || !pluggedIn);
+        stopChargeBtn.classList.toggle('hidden', !charging);
+    }
 }
 
 function setupControls() {
@@ -1404,6 +1478,11 @@ function setupControls() {
     const unlockBtn    = document.getElementById('ctrlUnlock');
     const flashBtn     = document.getElementById('ctrlFlash');
     const honkBtn      = document.getElementById('ctrlHonk');
+    const sentryBtn    = document.getElementById('ctrlSentry');
+    const trunkBtn     = document.getElementById('ctrlTrunk');
+    const frunkBtn     = document.getElementById('ctrlFrunk');
+    const startChargeBtn = document.getElementById('ctrlStartCharge');
+    const stopChargeBtn  = document.getElementById('ctrlStopCharge');
 
     async function runCmd(btn, command, params, successMsg) {
         const orig = btn.textContent;
@@ -1462,6 +1541,30 @@ function setupControls() {
     requireConfirmTap(unlockBtn, () => runCmd(unlockBtn, 'door_unlock',  {}, t('car_unlocked')));
     requireConfirmTap(flashBtn,  () => runCmd(flashBtn,  'flash_lights', {}, t('lights_flashed')));
     requireConfirmTap(honkBtn,   () => runCmd(honkBtn,   'honk_horn',    {}, t('honked')));
+
+    // Sentry toggle
+    if (sentryBtn) {
+        requireConfirmTap(sentryBtn, async () => {
+            const on = sentryBtn.classList.contains('ctrl-active');
+            await runCmd(sentryBtn, 'set_sentry_mode', { on: !on }, on ? t('sentry_off') : t('sentry_on'));
+        });
+    }
+
+    // Trunk / Frunk
+    if (trunkBtn) {
+        requireConfirmTap(trunkBtn, () => runCmd(trunkBtn, 'actuate_trunk', { which_trunk: 'rear' }, t('trunk_opened')));
+    }
+    if (frunkBtn) {
+        requireConfirmTap(frunkBtn, () => runCmd(frunkBtn, 'actuate_trunk', { which_trunk: 'front' }, t('frunk_opened')));
+    }
+
+    // Charge start/stop
+    if (startChargeBtn) {
+        requireConfirmTap(startChargeBtn, () => runCmd(startChargeBtn, 'charge_start', {}, t('charge_started')));
+    }
+    if (stopChargeBtn) {
+        requireConfirmTap(stopChargeBtn, () => runCmd(stopChargeBtn, 'charge_stop', {}, t('charge_stopped')));
+    }
 
     // Firmware update buttons
     const checkFwBtn  = document.getElementById('checkFwBtn');
@@ -1578,10 +1681,10 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
         el.className = 'rec-item';
         el.innerHTML = `
             <div class="rec-item-header">
-                <span class="charger-badge ${badgeClass}">${badgeLabel}</span>
-                <span class="charger-dist">${s.dist.toFixed(1)} km away</span>
+                <span class="charger-badge ${badgeClass}">${escapeHtml(badgeLabel)}</span>
+                <span class="charger-dist">${formatDistance(s.dist)}</span>
             </div>
-            <div class="rec-item-name">${s.name}</div>
+            <div class="rec-item-name">${escapeHtml(s.name)}</div>
         `;
         const navBtn = document.createElement('button');
         navBtn.className = 'charger-nav-btn';
@@ -1593,6 +1696,183 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
 
     card.classList.remove('hidden');
 }
+
+// ── Custom Modal ───────────────────────────────────────────────
+
+function showModal(title, message, buttons = []) {
+    let overlay = document.getElementById('modalOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'modalOverlay';
+        overlay.className = 'modal-overlay';
+        document.body.appendChild(overlay);
+    }
+    const btnsHtml = buttons.map((b, i) =>
+        `<button class="modal-btn ${b.cls || ''}" data-idx="${i}">${escapeHtml(b.label)}</button>`
+    ).join('');
+    overlay.innerHTML = `
+        <div class="modal-box">
+            <div class="modal-title">${escapeHtml(title)}</div>
+            <div class="modal-msg">${escapeHtml(message)}</div>
+            <div class="modal-btns">${btnsHtml}</div>
+        </div>`;
+    overlay.classList.add('modal-visible');
+    overlay.querySelectorAll('.modal-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const b = buttons[parseInt(btn.dataset.idx)];
+            overlay.classList.remove('modal-visible');
+            if (b && b.action) b.action();
+        });
+    });
+}
+
+// ── Vehicle Picker ─────────────────────────────────────────────
+
+function showVehiclePicker(vehicles) {
+    return new Promise(resolve => {
+        let overlay = document.getElementById('modalOverlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'modalOverlay';
+            overlay.className = 'modal-overlay';
+            document.body.appendChild(overlay);
+        }
+        const items = vehicles.map((v, i) => {
+            const name = v.display_name || `Vehicle ${i + 1}`;
+            const id = v.id_s || String(v.id);
+            return `<button class="modal-vehicle-btn" data-id="${escapeHtml(id)}" data-name="${escapeHtml(name)}">
+                <span class="modal-vehicle-name">${escapeHtml(name)}</span>
+                <span class="modal-vehicle-vin">${escapeHtml(v.vin || '')}</span>
+            </button>`;
+        }).join('');
+        overlay.innerHTML = `
+            <div class="modal-box">
+                <div class="modal-title">${t('select_vehicle')}</div>
+                <div class="modal-vehicle-list">${items}</div>
+            </div>`;
+        overlay.classList.add('modal-visible');
+        overlay.querySelectorAll('.modal-vehicle-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                localStorage.setItem('tesla_vehicle_id', btn.dataset.id);
+                localStorage.setItem('tesla_vehicle_name', btn.dataset.name);
+                overlay.classList.remove('modal-visible');
+                resolve();
+            });
+        });
+    });
+}
+
+// ── Trip Computer ─────────────────────────────────────────────
+
+function updateTripComputer(d) {
+    if (!d || d.odometer == null) return;
+    const odoKm = d.odometer * 1.60934; // API returns miles
+    const startOdo = parseFloat(localStorage.getItem('trip_start_odo') || '0');
+    const startBat = parseFloat(localStorage.getItem('trip_start_bat') || '0');
+    const batKwh = (d.battery_level || 0) * 0.75; // ~75 kWh pack
+
+    if (!startOdo) {
+        // First time: initialize trip
+        localStorage.setItem('trip_start_odo', odoKm.toString());
+        localStorage.setItem('trip_start_bat', batKwh.toString());
+        return;
+    }
+
+    const distKm = Math.max(0, odoKm - startOdo);
+    const energyUsed = Math.max(0, startBat - batKwh);
+    const efficiency = distKm > 0.5 ? Math.round((energyUsed * 1000) / distKm) : 0;
+
+    const distEl = document.getElementById('distanceToday');
+    if (distEl) {
+        distEl.dataset.km = distKm.toString();
+        distEl.textContent = formatDistance(distKm);
+    }
+
+    const effEl = document.getElementById('avgEfficiency');
+    if (effEl && efficiency > 0) {
+        effEl.dataset.whkm = efficiency.toString();
+        const isMiles = USER_PREFERENCES.distanceUnit === 'miles';
+        effEl.textContent = isMiles ? `${Math.round(efficiency * 1.60934)} Wh/mi` : `${efficiency} Wh/km`;
+    }
+
+    const energyEl = document.getElementById('energyUsed');
+    if (energyEl) energyEl.textContent = energyUsed > 0 ? `${energyUsed.toFixed(1)} kWh` : '0 kWh';
+}
+
+function resetTrip() {
+    const d = getTeslaData();
+    if (d.odometer != null) {
+        const odoKm = d.odometer * 1.60934;
+        const batKwh = (d.battery_level || 0) * 0.75;
+        localStorage.setItem('trip_start_odo', odoKm.toString());
+        localStorage.setItem('trip_start_bat', batKwh.toString());
+    }
+    const distEl = document.getElementById('distanceToday');
+    if (distEl) { distEl.dataset.km = '0'; distEl.textContent = formatDistance(0); }
+    const effEl = document.getElementById('avgEfficiency');
+    if (effEl) { effEl.dataset.whkm = '0'; effEl.textContent = '0 Wh/km'; }
+    const energyEl = document.getElementById('energyUsed');
+    if (energyEl) energyEl.textContent = '0 kWh';
+    showToast(t('trip_reset_done'));
+}
+
+// ── Offline indicator ─────────────────────────────────────────
+
+function setupOfflineIndicator() {
+    const banner = document.getElementById('offlineBanner');
+    if (!banner) return;
+    function update() {
+        banner.classList.toggle('hidden', navigator.onLine);
+        banner.textContent = t('offline_banner');
+    }
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    update();
+}
+
+// ── Data freshness ───────────────────────────────────────────
+
+function updateLastUpdated() {
+    const el = document.getElementById('lastUpdated');
+    if (!el) return;
+    if (!_lastFetchTime) { el.textContent = ''; return; }
+    const ago = Math.round((Date.now() - _lastFetchTime) / 60000);
+    const timeStr = ago < 1 ? t('just_now') : t('minutes_ago', { min: ago });
+    el.textContent = t('last_updated', { time: timeStr });
+}
+
+// ── Visibility-based clock optimization ─────────────────────
+
+let _clockInterval = null;
+function startClock() {
+    if (_clockInterval) return;
+    updateTime();
+    _clockInterval = setInterval(updateTime, 1000);
+}
+function stopClock() {
+    if (_clockInterval) { clearInterval(_clockInterval); _clockInterval = null; }
+}
+document.addEventListener('visibilitychange', () => {
+    document.hidden ? stopClock() : startClock();
+});
+
+// ── Remove auto temperature option ─────────────────────────
+// "Auto" was listed in Settings but never implemented.
+// If a user had it selected, default them to celsius.
+if (USER_PREFERENCES.temperatureUnit === 'auto') {
+    USER_PREFERENCES.temperatureUnit = 'celsius';
+    localStorage.setItem('temp_unit', 'celsius');
+}
+
+// ── Error handling ─────────────────────────────────────────────────
+window.addEventListener('error', e => {
+    console.error('Unhandled error:', e.error);
+    showToast('An unexpected error occurred');
+});
+window.addEventListener('unhandledrejection', e => {
+    console.error('Unhandled promise rejection:', e.reason);
+    showToast('An unexpected error occurred');
+});
 
 // ── Init ───────────────────────────────────────────────────────
 
@@ -1619,6 +1899,14 @@ async function init() {
     setupSettings();
     setupControls();
     setupChargerPrefs();
+    setupOfflineIndicator();
+
+    // Wire trip reset button
+    const resetTripBtn = document.getElementById('resetTripBtn');
+    if (resetTripBtn) resetTripBtn.addEventListener('click', resetTrip);
+
+    // Periodically update the "last updated" display
+    setInterval(updateLastUpdated, 30000);
 
     // Auto-refresh live data every 30 minutes when connected
     // Tesla charges per API call — keep this infrequent

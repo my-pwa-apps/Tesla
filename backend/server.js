@@ -1,7 +1,9 @@
-const express = require('express');
-const cors    = require('cors');
-const fetch   = require('node-fetch');
-const path    = require('path');
+const express   = require('express');
+const cors      = require('cors');
+const fetch     = require('node-fetch');
+const path      = require('path');
+const rateLimit = require('express-rate-limit');
+const helmet    = require('helmet');
 require('dotenv').config();
 
 const app = express();
@@ -14,7 +16,6 @@ const ALLOWED_ORIGINS = [
     'http://127.0.0.1:5500',
     'http://localhost:3000',
     'http://127.0.0.1:3000',
-    'null'   // file:// protocol for local HTML opens
 ];
 
 app.use(cors({
@@ -25,11 +26,25 @@ app.use(cors({
 app.use(express.json());
 
 // ── Security headers ──────────────────────────────────────────────────────
-app.use((req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    next();
+app.use(helmet({
+    contentSecurityPolicy: false,  // CSP managed by frontend meta tag
+    crossOriginEmbedderPolicy: false
+}));
+
+// ── Rate limiting ─────────────────────────────────────────────────────────
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,  // 15 minutes
+    max: 20,                   // 20 requests per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later' }
+});
+const commandLimiter = rateLimit({
+    windowMs: 60 * 1000,  // 1 minute
+    max: 30,              // 30 commands per minute
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many commands, please slow down' }
 });
 
 // ── Static files ──────────────────────────────────────────────────────────
@@ -99,7 +114,7 @@ app.get('/api/config', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH: exchange code for tokens
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/auth/token', async (req, res) => {
+app.post('/api/auth/token', authLimiter, async (req, res) => {
     const { code, code_verifier, redirect_uri } = req.body;
     if (!TESLA.clientId || !TESLA.clientSecret) {
         return res.status(500).json({ error: 'Server credentials not configured', hint: 'Set TESLA_CLIENT_ID and TESLA_CLIENT_SECRET in Vercel env vars' });
@@ -124,7 +139,7 @@ app.post('/api/auth/token', async (req, res) => {
             return res.status(502).json({ error: 'Tesla returned unexpected response', status: r.status, preview: text.substring(0, 200) });
         }
         const data = await r.json();
-        console.log('Tesla token response:', r.status, JSON.stringify(data).substring(0, 200));
+        console.log('Tesla token response:', r.status, r.ok ? 'success' : 'failed');
         res.status(r.ok ? 200 : r.status).json(data);
     } catch (e) {
         console.error('Token exchange error:', e);
@@ -135,7 +150,7 @@ app.post('/api/auth/token', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH: refresh token
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/auth/refresh', async (req, res) => {
+app.post('/api/auth/refresh', authLimiter, async (req, res) => {
     const { refresh_token } = req.body;
     if (!TESLA.clientId || !TESLA.clientSecret) {
         return res.status(500).json({ error: 'Server credentials not configured' });
@@ -205,6 +220,7 @@ app.get('/api/vehicles/:id/vehicle_data', async (req, res) => {
 app.post('/api/vehicles/:id/wake_up', async (req, res) => {
     const token = bearerToken(req);
     if (!token) return res.status(401).json({ error: 'No access token' });
+    if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'Invalid vehicle ID' });
     try {
         // Send the initial wake command
         await fleetPost(`/vehicles/${req.params.id}/wake_up`, token);
@@ -236,11 +252,24 @@ app.post('/api/vehicles/:id/wake_up', async (req, res) => {
 // VEHICLES: generic command proxy  (lock, unlock, climate, etc.)
 // Body: { command: 'door_lock' | 'door_unlock' | 'auto_conditioning_start' | ... }
 // ─────────────────────────────────────────────────────────────────────────────
-app.post('/api/vehicles/:id/command', async (req, res) => {
+app.post('/api/vehicles/:id/command', commandLimiter, async (req, res) => {
     const token = bearerToken(req);
     if (!token) return res.status(401).json({ error: 'No access token' });
+    if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'Invalid vehicle ID' });
     const { command, ...payload } = req.body || {};
     if (!command) return res.status(400).json({ error: 'command is required' });
+    const ALLOWED_COMMANDS = new Set([
+        'door_lock', 'door_unlock',
+        'auto_conditioning_start', 'auto_conditioning_stop',
+        'set_temps', 'set_charge_limit',
+        'charge_start', 'charge_stop',
+        'flash_lights', 'honk_horn',
+        'set_sentry_mode', 'schedule_software_update',
+        'actuate_trunk', 'set_preconditioning_max'
+    ]);
+    if (!ALLOWED_COMMANDS.has(command)) {
+        return res.status(400).json({ error: 'Unknown command' });
+    }
     try {
         const { status, body } = await fleetPost(
             `/vehicles/${req.params.id}/command/${command}`, token, payload
@@ -258,6 +287,7 @@ app.post('/api/vehicles/:id/command', async (req, res) => {
 app.get('/api/vehicles/:id/nearby_charging_sites', async (req, res) => {
     const token = bearerToken(req);
     if (!token) return res.status(401).json({ error: 'No access token' });
+    if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'Invalid vehicle ID' });
     try {
         const { status, body } = await fleetGet(
             `/vehicles/${req.params.id}/nearby_charging_sites`, token

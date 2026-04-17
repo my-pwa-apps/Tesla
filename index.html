@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src https://fonts.gstatic.com; img-src 'self' https://*.basemaps.cartocdn.com data: blob:; connect-src 'self' https://bart-gilt-delta.vercel.app https://api.open-meteo.com https://nominatim.openstreetmap.org https://router.project-osrm.org https://overpass-api.de http://localhost:3000 http://127.0.0.1:3000; worker-src 'self'; object-src 'none'; frame-src 'none';">
     <title>Tesla Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,6 +21,7 @@
     <link rel="apple-touch-icon" href="icon-192.svg">
 </head>
 <body>
+    <div id="offlineBanner" class="offline-banner hidden"></div>
     <div class="container">
         <header>
             <div class="header-content">
@@ -37,6 +39,7 @@
                         Connect Tesla
                     </button>
                     <div class="time-display" id="currentTime"></div>
+                    <div class="last-updated" id="lastUpdated"></div>
                 </div>
             </div>
         </header>
@@ -155,6 +158,9 @@
                             </div>
                         </div>
 
+                        <!-- Door open warnings -->
+                        <div class="door-warning hidden" id="doorWarnings"></div>
+
                         <!-- Firmware update bar -->
                         <div class="fw-update-bar hidden" id="fwUpdateBar">
                             <div class="fw-update-info" id="fwUpdateInfo"></div>
@@ -228,9 +234,9 @@
                             <button class="ctrl-btn" id="ctrlPrecondition" data-i18n="ctrl_precondition">Precondition</button>
                         </div>
                         <div class="ctrl-row ctrl-temp-row">
-                            <button class="ctrl-icon-btn" id="ctrlTempDown">&#8722;</button>
+                            <button class="ctrl-icon-btn" id="ctrlTempDown" aria-label="Decrease temperature">&#8722;</button>
                             <span class="ctrl-temp-val" id="ctrlTempDisplay">---</span>
-                            <button class="ctrl-icon-btn" id="ctrlTempUp">+</button>
+                            <button class="ctrl-icon-btn" id="ctrlTempUp" aria-label="Increase temperature">+</button>
                         </div>
                     </div>
                     <div class="ctrl-section">
@@ -249,6 +255,30 @@
                             <button class="ctrl-btn" id="ctrlFlash" data-i18n="ctrl_flash">Flash</button>
                             <button class="ctrl-btn" id="ctrlHonk" data-i18n="ctrl_honk">Honk</button>
                         </div>
+                    </div>
+                    <div class="ctrl-section">
+                        <div class="ctrl-section-label" data-i18n="ctrl_sentry">Sentry</div>
+                        <div class="ctrl-row">
+                            <button class="ctrl-btn" id="ctrlSentry">Sentry: ---</button>
+                        </div>
+                    </div>
+                    <div class="ctrl-section">
+                        <div class="ctrl-section-label" data-i18n="ctrl_charge_ctrl">Charging</div>
+                        <div class="ctrl-row">
+                            <button class="ctrl-btn hidden" id="ctrlStartCharge" data-i18n="ctrl_start_charge">Start</button>
+                            <button class="ctrl-btn hidden" id="ctrlStopCharge" data-i18n="ctrl_stop_charge">Stop</button>
+                        </div>
+                    </div>
+                    <div class="ctrl-section">
+                        <div class="ctrl-section-label">Trunk</div>
+                        <div class="ctrl-row">
+                            <button class="ctrl-btn" id="ctrlTrunk" data-i18n="ctrl_trunk">Trunk</button>
+                            <button class="ctrl-btn" id="ctrlFrunk" data-i18n="ctrl_frunk">Frunk</button>
+                        </div>
+                    </div>
+                    <!-- Overlay when disconnected -->
+                    <div class="ctrl-overlay hidden" id="ctrlOverlay">
+                        <span data-i18n="connect_first">Connect Tesla to use car controls</span>
                     </div>
                 </div>
             </div>
@@ -371,7 +401,7 @@
                     <!-- Map Panel -->
                     <div class="nav-map-panel">
                         <div id="navMap"></div>
-                        <button class="map-locate-btn" id="mapLocateBtn" title="Go to my location">
+                        <button class="map-locate-btn" id="mapLocateBtn" title="Go to my location" aria-label="Go to my location">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
                                 <circle cx="12" cy="12" r="3"/>
                                 <path d="M12 1v4M12 19v4M1 12h4M19 12h4"/>
@@ -501,7 +531,6 @@
                         <div class="setting-item">
                             <label for="tempUnit" data-i18n="setting_temp">Temperature</label>
                             <select id="tempUnit" class="setting-select">
-                                <option value="auto" data-i18n="temp_auto">Auto (Location-based)</option>
                                 <option value="celsius" data-i18n="temp_celsius">Celsius (°C)</option>
                                 <option value="fahrenheit" data-i18n="temp_fahrenheit">Fahrenheit (°F)</option>
                             </select>
@@ -550,13 +579,7 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="i18n.js"></script>
-    <script src="app.js?v=6"></script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () =>
-                navigator.serviceWorker.register('sw.js').catch(() => {})
-            );
-        }
-    </script>
+    <script src="app.js?v=8"></script>
+    <script src="sw-register.js"></script>
 </body>
 </html>

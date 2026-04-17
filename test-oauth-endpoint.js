@@ -1,7 +1,11 @@
 // Test Tesla OAuth endpoint directly
 const https = require('https');
 
-const CLIENT_ID = '98115f27-6ac6-4a11-9bc8-c256cce5f8cc';
+const CLIENT_ID = process.env.TESLA_CLIENT_ID;
+if (!CLIENT_ID) {
+    console.error('Set TESLA_CLIENT_ID env var before running.');
+    process.exit(1);
+}
 const REDIRECT_URI = 'https://my-pwa-apps.github.io/Tesla/callback.html';
 
 // Try to hit the OAuth endpoint and see what happens

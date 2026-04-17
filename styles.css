@@ -1693,6 +1693,185 @@ header {
     width: 100%;
 }
 
+/* ── Offline Banner ──────────────────────────────────────── */
+.offline-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: #b91c1c;
+    color: #fff;
+    text-align: center;
+    padding: 8px 16px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+
+.offline-banner.hidden {
+    display: none;
+}
+
+/* ── Last Updated ────────────────────────────────────────── */
+.last-updated {
+    font-size: 0.68rem;
+    color: var(--c-text-dim);
+    letter-spacing: 0.2px;
+}
+
+/* ── Door Warning ────────────────────────────────────────── */
+.door-warning {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-radius: 6px;
+    color: #f59e0b;
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+
+/* ── Controls Overlay (disconnected) ─────────────────────── */
+.controls-tile {
+    position: relative;
+}
+
+.ctrl-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(13, 13, 13, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-card);
+    z-index: 5;
+    color: var(--c-text-muted);
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-align: center;
+    padding: 24px;
+}
+
+.ctrl-overlay.hidden {
+    display: none;
+}
+
+/* ── Custom Modal ────────────────────────────────────────── */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 24px;
+}
+
+.modal-overlay.modal-visible {
+    display: flex;
+}
+
+.modal-box {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    padding: 28px 24px 20px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+}
+
+.modal-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--c-white);
+    margin-bottom: 10px;
+}
+
+.modal-msg {
+    font-size: 0.85rem;
+    color: var(--c-text-muted);
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+.modal-btns {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+.modal-btn {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface-2);
+    color: var(--c-text);
+    font-size: 0.82rem;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition);
+}
+
+.modal-btn:hover {
+    background: var(--c-surface-3);
+    border-color: var(--c-border-hover);
+}
+
+.modal-btn-danger {
+    background: var(--c-red);
+    border-color: var(--c-red);
+    color: #fff;
+}
+
+.modal-btn-danger:hover {
+    background: #c01530;
+}
+
+/* Vehicle picker */
+.modal-vehicle-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.modal-vehicle-btn {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 14px 16px;
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color var(--transition), background var(--transition);
+    text-align: left;
+    font-family: inherit;
+    color: var(--c-text);
+}
+
+.modal-vehicle-btn:hover {
+    border-color: var(--c-red);
+    background: var(--c-surface-3);
+}
+
+.modal-vehicle-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--c-white);
+}
+
+.modal-vehicle-vin {
+    font-size: 0.7rem;
+    color: var(--c-text-dim);
+    letter-spacing: 0.5px;
+}
+
 /* ── Mobile / PWA Responsive ─────────────────────────────── */
 
 /* Base mobile improvements: Pixel 7 = 412 px portrait */

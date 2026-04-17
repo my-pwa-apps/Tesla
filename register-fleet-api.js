@@ -10,8 +10,12 @@
  *   - Public key deployed at: https://<DOMAIN>/.well-known/appspecific/com.tesla.3p.public-key.pem
  */
 
-const CLIENT_ID     = process.env.TESLA_CLIENT_ID     || 'c790e3ef-4ff3-4394-9b23-06905f757946';
-const CLIENT_SECRET = process.env.TESLA_CLIENT_SECRET || 'ta-secret.ht72nLMCdJ-2&9_w';
+const CLIENT_ID     = process.env.TESLA_CLIENT_ID;
+const CLIENT_SECRET = process.env.TESLA_CLIENT_SECRET;
+if (!CLIENT_ID || !CLIENT_SECRET) {
+    console.error('Set TESLA_CLIENT_ID and TESLA_CLIENT_SECRET env vars before running.');
+    process.exit(1);
+}
 const DOMAIN        = 'bart-gilt-delta.vercel.app';
 const REGION        = 'eu'; // eu | na | cn
 

@@ -29,6 +29,14 @@ npm-debug.log*
 *.swp
 *.swo
 
+# Test / dev-only scripts
+test-oauth.html
+test-oauth-endpoint.js
+register-fleet-api.js
+generate-keys.js
+private-key.pem
+public-key.pem
+
 # OS
 .DS_Store
 Thumbs.db
