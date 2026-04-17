@@ -1693,6 +1693,429 @@ header {
     width: 100%;
 }
 
+/* ── Dashboard fullscreen button ─────────────────────────── */
+.header-fs-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    color: var(--c-text-muted);
+    cursor: pointer;
+    transition: border-color var(--transition), color var(--transition);
+    flex-shrink: 0;
+}
+
+.header-fs-btn:hover {
+    border-color: var(--c-border-hover);
+    color: var(--c-white);
+}
+
+/* ── Charger amenity tags ────────────────────────────────── */
+.charger-amenities {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+
+.amenity-tag {
+    font-size: 0.65rem;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-weight: 500;
+}
+
+.amenity-food { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.amenity-shop { background: rgba(62, 106, 225, 0.15); color: #3e6ae1; }
+.amenity-hotel { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+
+.charger-amenity-names {
+    font-size: 0.68rem;
+    color: var(--c-text-dim);
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Charger filter pills ────────────────────────────────── */
+.charger-filters {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    margin: 10px 0 6px;
+}
+
+.amenity-filter {
+    padding: 5px 10px;
+    border: 1px solid var(--c-border);
+    border-radius: 16px;
+    background: transparent;
+    color: var(--c-text-muted);
+    font-size: 0.72rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.amenity-filter.active {
+    background: rgba(227, 25, 55, 0.12);
+    border-color: var(--c-red);
+    color: var(--c-red);
+}
+
+.amenity-filter:hover:not(.active) {
+    border-color: var(--c-border-hover);
+    color: var(--c-text);
+}
+
+/* ── Map controls (replacing single locate button) ───────── */
+.map-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 500;
+}
+
+.map-ctrl-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    color: var(--c-text-muted);
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition), color var(--transition);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.map-ctrl-btn:hover {
+    background: var(--c-surface-3);
+    border-color: var(--c-border-hover);
+    color: var(--c-white);
+}
+
+.map-ctrl-btn.map-ctrl-active {
+    background: var(--c-blue);
+    border-color: var(--c-blue);
+    color: #fff;
+}
+
+/* Remove old locate button style */
+.map-locate-btn { display: none; }
+
+/* ── Fullscreen map mode ─────────────────────────────────── */
+.nav-fullscreen {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 999 !important;
+    border-radius: 0 !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    grid-column: 1 / -1 !important;
+}
+
+.nav-fullscreen .tile-header { display: none; }
+
+.nav-fullscreen .nav-layout {
+    height: 100vh;
+}
+
+.nav-fullscreen .nav-panel {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 340px;
+    z-index: 600;
+    background: rgba(13, 13, 13, 0.95);
+    backdrop-filter: blur(10px);
+    overflow-y: auto;
+    border-right: 1px solid var(--c-border);
+}
+
+.nav-fullscreen .nav-map-panel {
+    height: 100vh;
+}
+
+.nav-fullscreen #navMap {
+    height: 100vh !important;
+    min-height: 100vh !important;
+}
+
+body.nav-fs-active {
+    overflow: hidden;
+}
+
+@media (max-width: 480px) {
+    .nav-fullscreen .nav-panel {
+        width: 100%;
+        height: 45vh;
+        position: relative;
+        border-right: none;
+        border-bottom: 1px solid var(--c-border);
+    }
+    .nav-fullscreen .nav-map-panel {
+        height: 55vh;
+    }
+    .nav-fullscreen #navMap {
+        height: 55vh !important;
+        min-height: 55vh !important;
+    }
+}
+
+/* ── Trip Planner ────────────────────────────────────────── */
+.trip-planner {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.tp-header {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.tp-name-input {
+    flex: 1;
+    font-weight: 500;
+}
+
+.tp-header-btns {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.tp-add-stop {
+    position: relative;
+}
+
+.tp-search-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: 0 0 var(--radius-item) var(--radius-item);
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.tp-search-results:empty {
+    display: none;
+}
+
+/* Waypoints */
+.tp-waypoints {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.tp-waypoint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-item);
+}
+
+.tp-wp-marker {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--c-blue);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 0.65rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.tp-waypoint:first-child .tp-wp-marker { background: var(--c-blue); }
+.tp-waypoint:last-child .tp-wp-marker { background: var(--c-red); }
+
+.tp-wp-name {
+    flex: 1;
+    font-size: 0.8rem;
+    color: var(--c-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tp-wp-btns {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.tp-wp-btn {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--c-border);
+    border-radius: 4px;
+    color: var(--c-text-muted);
+    font-size: 0.6rem;
+    cursor: pointer;
+    transition: background var(--transition);
+}
+
+.tp-wp-btn:hover:not(:disabled) { background: var(--c-surface-3); color: var(--c-text); }
+.tp-wp-btn:disabled { opacity: 0.3; cursor: default; }
+.tp-wp-del:hover { color: var(--c-red); border-color: var(--c-red); }
+
+/* Trip summary */
+.tp-summary {
+    padding: 10px 12px;
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-item);
+}
+
+.tp-summary-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 0.78rem;
+    color: var(--c-text-muted);
+}
+
+.tp-summary-row span:last-child {
+    font-weight: 600;
+    color: var(--c-text);
+}
+
+.tp-arrival span:last-child {
+    font-weight: 700;
+}
+
+/* Charge plan */
+.tp-charge-header {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--c-red);
+    margin-bottom: 6px;
+}
+
+.tp-charge-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 0;
+    border-top: 1px solid var(--c-border);
+    font-size: 0.75rem;
+    color: var(--c-text-muted);
+}
+
+.tp-charge-item:first-child { border-top: none; }
+
+.tp-charge-num {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(227, 25, 55, 0.15);
+    color: var(--c-red);
+    border-radius: 50%;
+    font-size: 0.6rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.tp-charge-info strong {
+    color: var(--c-text);
+}
+
+/* Trip actions */
+.tp-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.tp-actions .action-btn,
+.tp-actions .ctrl-btn {
+    flex: 1;
+    min-width: 80px;
+}
+
+/* Load trip list */
+.tp-load-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 8px;
+}
+
+.tp-load-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--c-surface-2);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-item);
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: border-color var(--transition);
+}
+
+.tp-load-item:hover { border-color: var(--c-border-hover); }
+
+.tp-load-name {
+    flex: 1;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--c-text);
+}
+
+.tp-load-info {
+    font-size: 0.7rem;
+    color: var(--c-text-dim);
+}
+
+.tp-load-del {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--c-text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
+.tp-load-del:hover { color: var(--c-red); }
+
 /* ── Destination info extras ─────────────────────────────── */
 .dest-actions {
     display: flex;

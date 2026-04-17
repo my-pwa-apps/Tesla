@@ -1,8 +1,8 @@
-const CACHE = 'tesla-dash-v9';
+const CACHE = 'tesla-dash-v11';
 const STATIC = [
     '/',
     '/index.html',
-    '/app.js?v=8',
+    '/app.js?v=10',
     '/i18n.js',
     '/sw-register.js',
     '/styles.css',

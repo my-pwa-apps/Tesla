@@ -941,6 +941,16 @@ function chargerBadge(network) {
     return { cls: 'badge-other', label: network || 'Charger' };
 }
 
+// Sort chargers: prefer Fastned (highway-located) over Supercharger at similar distances.
+// Fastned gets a 30% distance discount so it ranks higher when reasonably close.
+function chargerSortPreferFastned(a, b) {
+    const weightedDist = s => {
+        if (/fastned/i.test(s.network)) return s.dist * 0.7;   // 30% bonus
+        return s.dist;
+    };
+    return weightedDist(a) - weightedDist(b);
+}
+
 async function preconditionBattery() {
     const res = await sendCarCommand('auto_conditioning_start');
     return res.ok;
@@ -994,35 +1004,22 @@ async function findChargers() {
         let stations = await fetchNearbyChargers(lat, lon, 30);
         stations = stations.filter(s => matchesPref(s.network));
         stations.forEach(s => { s.dist = haversineKm(lat, lon, s.lat, s.lon); });
-        stations.sort((a, b) => a.dist - b.dist);
+        stations.sort(chargerSortPreferFastned);
 
-        info.classList.remove('hidden');
-        info.innerHTML = '';
+        // Fetch amenities for top 12 chargers in parallel
+        const top12 = stations.slice(0, 12);
+        const amenityResults = await Promise.all(
+            top12.map(s => fetchAmenitiesNear(s.lat, s.lon, 500).catch(() => ({ food: [], shop: [], hotel: [] })))
+        );
+        top12.forEach((s, i) => { s.amenities = amenityResults[i]; });
 
-        if (!stations.length) {
-            info.innerHTML = `<p class="charger-empty">${t('no_chargers')}</p>`;
-        } else {
-            stations.slice(0, 12).forEach(s => {
-                const { cls: badgeClass, label: badgeLabel } = chargerBadge(s.network);
+        // Store for filtering
+        NAV._lastChargers = top12;
+        NAV._lastChargerLat = lat;
+        NAV._lastChargerLon = lon;
 
-                const el = document.createElement('div');
-                el.className = 'charger-item';
-                el.innerHTML = `
-                    <div class="charger-item-header">
-                        <span class="charger-badge ${badgeClass}">${escapeHtml(badgeLabel)}</span>
-                        <span class="charger-dist">${formatDistance(s.dist)}</span>
-                    </div>
-                    <div class="charger-name">${escapeHtml(s.name)}</div>
-                    ${s.sockets ? `<div class="charger-distance">${escapeHtml(String(s.sockets))} sockets</div>` : ''}
-                `;
-                const navBtn = document.createElement('button');
-                navBtn.className = 'charger-nav-btn';
-                navBtn.textContent = t('nav_precondition');
-                navBtn.addEventListener('click', () => navigateToCharger(s.lat, s.lon, s.name));
-                el.appendChild(navBtn);
-                info.appendChild(el);
-            });
-        }
+        document.getElementById('chargerFilters').classList.remove('hidden');
+        renderChargerResults(top12);
 
         btn.textContent = t('refresh');
         btn.disabled    = false;
@@ -1035,6 +1032,64 @@ async function findChargers() {
 }
 
 document.getElementById('findChargersBtn').addEventListener('click', findChargers);
+
+// ── Charger results rendering with amenity tags ─────────────
+
+function renderChargerResults(stations, filter = 'all') {
+    const info = document.getElementById('chargingInfo');
+    info.classList.remove('hidden');
+    info.innerHTML = '';
+
+    let filtered = stations;
+    if (filter !== 'all') {
+        filtered = stations.filter(s => s.amenities && s.amenities[filter] && s.amenities[filter].length > 0);
+    }
+
+    if (!filtered.length) {
+        info.innerHTML = `<p class="charger-empty">${filter !== 'all' ? t('no_chargers_filter') : t('no_chargers')}</p>`;
+        return;
+    }
+
+    filtered.forEach(s => {
+        const { cls: badgeClass, label: badgeLabel } = chargerBadge(s.network);
+        const amenityHtml = s.amenities ? renderAmenityTags(s.amenities) : '';
+        const amenityDetails = [];
+        if (s.amenities) {
+            if (s.amenities.food.length) amenityDetails.push(...s.amenities.food.slice(0, 3));
+            if (s.amenities.shop.length) amenityDetails.push(...s.amenities.shop.slice(0, 2));
+            if (s.amenities.hotel.length) amenityDetails.push(...s.amenities.hotel.slice(0, 2));
+        }
+
+        const el = document.createElement('div');
+        el.className = 'charger-item';
+        el.innerHTML = `
+            <div class="charger-item-header">
+                <span class="charger-badge ${badgeClass}">${escapeHtml(badgeLabel)}</span>
+                <span class="charger-dist">${formatDistance(s.dist)}</span>
+            </div>
+            <div class="charger-name">${escapeHtml(s.name)}</div>
+            ${s.sockets ? `<div class="charger-distance">${escapeHtml(String(s.sockets))} sockets</div>` : ''}
+            ${amenityHtml ? `<div class="charger-amenities">${amenityHtml}</div>` : ''}
+            ${amenityDetails.length ? `<div class="charger-amenity-names">${amenityDetails.map(n => escapeHtml(n)).join(' · ')}</div>` : ''}
+        `;
+        const navBtn = document.createElement('button');
+        navBtn.className = 'charger-nav-btn';
+        navBtn.textContent = t('nav_precondition');
+        navBtn.addEventListener('click', () => navigateToCharger(s.lat, s.lon, s.name));
+        el.appendChild(navBtn);
+        info.appendChild(el);
+    });
+}
+
+// Wire amenity filter buttons
+document.querySelectorAll('.amenity-filter').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.amenity-filter').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        _chargerAmenityFilter = btn.dataset.filter;
+        if (NAV._lastChargers) renderChargerResults(NAV._lastChargers, _chargerAmenityFilter);
+    });
+});
 
 // ── Navigation ─────────────────────────────────────────────────
 
@@ -1068,9 +1123,21 @@ function initNavMap() {
         attributionControl: false
     }).setView([52.3676, 4.9041], 12);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19, subdomains: 'abcd'
-    }).addTo(NAV.map);
+    // Map tile layers — Street (Voyager) + Satellite (Esri)
+    NAV.layers = {
+        street: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19, subdomains: 'abcd'
+        }),
+        satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: 'Esri'
+        }),
+        terrain: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            maxZoom: 17
+        })
+    };
+    NAV.activeLayer = 'street';
+    NAV.layers.street.addTo(NAV.map);
 
     L.control.zoom({ position: 'bottomright' }).addTo(NAV.map);
 
@@ -1499,6 +1566,19 @@ function setupNavigation() {
     renderSaved();
     renderRecent();
     updateHomeWorkButtons();
+
+    // GPS follow, fullscreen, and map layers
+    document.getElementById('mapFollowBtn').addEventListener('click', toggleGpsFollow);
+    document.getElementById('mapFullscreenBtn').addEventListener('click', toggleFullscreenMap);
+    document.getElementById('mapLayerBtn').addEventListener('click', cycleMapLayer);
+
+    // Dashboard fullscreen (for Tesla in-car browser)
+    const dashFsBtn = document.getElementById('dashFullscreenBtn');
+    if (dashFsBtn) dashFsBtn.addEventListener('click', toggleDashboardFullscreen);
+
+    // Trip planner (delayed until map is ready)
+    setTimeout(setupTripPlanner, 300);
+
     setTimeout(initNavMap, 150);
 }
 
@@ -1526,7 +1606,7 @@ function handleQuickDestination(dest) {
             const stations = await fetchNearbyChargers(lat, lon, 50);
             const filtered = stations.filter(s => matchFn(s.network));
             filtered.forEach(s => { s.dist = haversineKm(lat, lon, s.lat, s.lon); });
-            filtered.sort((a, b) => a.dist - b.dist);
+            filtered.sort(chargerSortPreferFastned);
             if (filtered.length) {
                 await navigateToCharger(filtered[0].lat, filtered[0].lon, filtered[0].name);
             } else {
@@ -1852,7 +1932,7 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
     });
 
     filtered.forEach(s => { s.dist = haversineKm(userLat, userLon, s.lat, s.lon); });
-    filtered.sort((a, b) => a.dist - b.dist);
+    filtered.sort(chargerSortPreferFastned);
 
     const top = filtered.slice(0, 3);
     if (!top.length) { card.classList.add('hidden'); return; }
@@ -1882,6 +1962,537 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
 
     card.classList.remove('hidden');
 }
+
+// ============================================================
+//  Trip Planner — multi-stop route planning with charge simulation
+// ============================================================
+
+const TRIP = {
+    waypoints: [],       // [{ lat, lon, name, address }]
+    legs: [],            // [{ distKm, durationSec, geometry }]
+    chargeStops: [],     // suggested charge stops
+    totalDistKm: 0,
+    totalDurationSec: 0
+};
+
+// ── Waypoint management ─────────────────────────────────────
+
+function tpAddWaypoint(dest) {
+    TRIP.waypoints.push({ ...dest, id: Date.now() });
+    tpRenderWaypoints();
+    document.getElementById('tpEmpty').classList.add('hidden');
+}
+
+function tpRemoveWaypoint(id) {
+    TRIP.waypoints = TRIP.waypoints.filter(w => w.id !== id);
+    tpRenderWaypoints();
+    if (!TRIP.waypoints.length) {
+        document.getElementById('tpEmpty').classList.remove('hidden');
+        document.getElementById('tpSummary').classList.add('hidden');
+        document.getElementById('tpChargePlan').classList.add('hidden');
+        tpClearMapLayers();
+    }
+}
+
+function tpMoveWaypoint(id, direction) {
+    const idx = TRIP.waypoints.findIndex(w => w.id === id);
+    if (idx < 0) return;
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= TRIP.waypoints.length) return;
+    [TRIP.waypoints[idx], TRIP.waypoints[newIdx]] = [TRIP.waypoints[newIdx], TRIP.waypoints[idx]];
+    tpRenderWaypoints();
+}
+
+function tpRenderWaypoints() {
+    const container = document.getElementById('tpWaypoints');
+    const empty = document.getElementById('tpEmpty');
+    if (!TRIP.waypoints.length) {
+        container.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+    }
+    empty.classList.add('hidden');
+    container.innerHTML = TRIP.waypoints.map((w, i) => {
+        const label = i === 0 ? 'A' : i === TRIP.waypoints.length - 1 ? 'B' : String(i);
+        return `<div class="tp-waypoint" data-id="${w.id}">
+            <span class="tp-wp-marker">${label}</span>
+            <span class="tp-wp-name">${escapeHtml(w.name)}</span>
+            <span class="tp-wp-btns">
+                <button class="tp-wp-btn" data-action="up" ${i === 0 ? 'disabled' : ''}>▲</button>
+                <button class="tp-wp-btn" data-action="down" ${i === TRIP.waypoints.length - 1 ? 'disabled' : ''}>▼</button>
+                <button class="tp-wp-btn tp-wp-del" data-action="del">✕</button>
+            </span>
+        </div>`;
+    }).join('');
+    container.querySelectorAll('.tp-wp-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = parseInt(btn.closest('.tp-waypoint').dataset.id);
+            if (btn.dataset.action === 'del') tpRemoveWaypoint(id);
+            else if (btn.dataset.action === 'up') tpMoveWaypoint(id, -1);
+            else if (btn.dataset.action === 'down') tpMoveWaypoint(id, 1);
+        });
+    });
+}
+
+// ── Waypoint search ─────────────────────────────────────────
+
+function setupTripPlanner() {
+    const searchInput = document.getElementById('tpSearch');
+    const resultsEl = document.getElementById('tpSearchResults');
+    let timer;
+
+    searchInput.addEventListener('input', () => {
+        clearTimeout(timer);
+        const q = searchInput.value.trim();
+        if (q.length < 3) { resultsEl.innerHTML = ''; return; }
+        timer = setTimeout(async () => {
+            try {
+                const resp = await fetch(
+                    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=4&addressdetails=1`,
+                    { headers: { 'Accept-Language': 'en' } }
+                );
+                const data = await resp.json();
+                resultsEl.innerHTML = '';
+                data.forEach(place => {
+                    const parts = place.display_name.split(', ');
+                    const name = parts[0];
+                    const el = document.createElement('div');
+                    el.className = 'nav-result-item';
+                    el.innerHTML = `<div class="result-name">${escapeHtml(name)}</div>
+                        <div class="result-coords">${escapeHtml(parts.slice(1, 3).join(', '))}</div>`;
+                    el.addEventListener('click', () => {
+                        tpAddWaypoint({
+                            lat: parseFloat(place.lat),
+                            lon: parseFloat(place.lon),
+                            name,
+                            address: place.display_name
+                        });
+                        searchInput.value = '';
+                        resultsEl.innerHTML = '';
+                    });
+                    resultsEl.appendChild(el);
+                });
+            } catch { resultsEl.innerHTML = ''; }
+        }, 420);
+    });
+
+    searchInput.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { searchInput.value = ''; resultsEl.innerHTML = ''; }
+    });
+
+    // Use current location as starting point
+    if (NAV.userLocation) {
+        tpAddWaypoint({
+            lat: NAV.userLocation.lat,
+            lon: NAV.userLocation.lon,
+            name: t('you_are_here'),
+            address: 'Current location'
+        });
+    }
+
+    // Route calculation
+    document.getElementById('tpRouteBtn').addEventListener('click', tpCalculateRoute);
+    document.getElementById('tpClearBtn').addEventListener('click', tpClearAll);
+    document.getElementById('tpSaveBtn').addEventListener('click', tpSaveTrip);
+    document.getElementById('tpLoadBtn').addEventListener('click', tpShowLoadList);
+    document.getElementById('tpOpenAbrp').addEventListener('click', tpOpenInAbrp);
+    document.getElementById('tpSendTesla').addEventListener('click', () => {
+        // Send first non-current waypoint to Tesla
+        const dest = TRIP.waypoints.length > 1 ? TRIP.waypoints[1] : TRIP.waypoints[0];
+        if (dest) {
+            NAV.currentDest = dest;
+            sendToTesla();
+        }
+    });
+}
+
+// ── Multi-leg routing ───────────────────────────────────────
+
+let _tpRouteLayers = [];
+let _tpMarkers = [];
+
+function tpClearMapLayers() {
+    _tpRouteLayers.forEach(l => NAV.map && NAV.map.removeLayer(l));
+    _tpMarkers.forEach(m => NAV.map && NAV.map.removeLayer(m));
+    _tpRouteLayers = [];
+    _tpMarkers = [];
+}
+
+async function tpCalculateRoute() {
+    if (TRIP.waypoints.length < 2) {
+        showToast(t('tp_need_2_stops'));
+        return;
+    }
+
+    const btn = document.getElementById('tpRouteBtn');
+    btn.disabled = true;
+    btn.textContent = t('searching');
+
+    tpClearMapLayers();
+    TRIP.legs = [];
+    TRIP.totalDistKm = 0;
+    TRIP.totalDurationSec = 0;
+
+    try {
+        // Build OSRM waypoints string for one request
+        const coords = TRIP.waypoints.map(w => `${w.lon},${w.lat}`).join(';');
+        const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false&alternatives=false`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+
+        if (data.code !== 'Ok' || !data.routes.length) {
+            showToast(t('tp_route_failed'));
+            btn.disabled = false;
+            btn.textContent = t('tp_calc_route');
+            return;
+        }
+
+        const route = data.routes[0];
+        TRIP.totalDistKm = route.distance / 1000;
+        TRIP.totalDurationSec = route.duration;
+
+        // Extract per-leg info
+        route.legs.forEach((leg, i) => {
+            TRIP.legs.push({
+                distKm: leg.distance / 1000,
+                durationSec: leg.duration,
+                fromName: TRIP.waypoints[i].name,
+                toName: TRIP.waypoints[i + 1].name
+            });
+        });
+
+        // Draw route on map
+        const routeLayer = L.geoJSON(route.geometry, {
+            style: { color: '#3e6ae1', weight: 4, opacity: 0.9 }
+        }).addTo(NAV.map);
+        _tpRouteLayers.push(routeLayer);
+
+        // Add numbered markers for each waypoint
+        TRIP.waypoints.forEach((w, i) => {
+            const label = i === 0 ? 'A' : i === TRIP.waypoints.length - 1 ? 'B' : String(i);
+            const color = i === 0 ? '#3e6ae1' : i === TRIP.waypoints.length - 1 ? '#e31937' : '#f59e0b';
+            const marker = L.marker([w.lat, w.lon], {
+                icon: L.divIcon({
+                    className: '',
+                    html: `<div style="width:24px;height:24px;background:${color};border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.4)">${label}</div>`,
+                    iconAnchor: [12, 12]
+                })
+            }).addTo(NAV.map).bindTooltip(w.name, { direction: 'top', offset: [0, -14] });
+            _tpMarkers.push(marker);
+        });
+
+        // Fit map to route
+        NAV.map.fitBounds(routeLayer.getBounds(), { padding: [40, 40], animate: true });
+
+        // Update summary
+        tpUpdateSummary();
+
+        // Simulate charge stops
+        tpSimulateCharging();
+
+    } catch (e) {
+        console.error('Trip route error:', e);
+        showToast(t('tp_route_failed'));
+    }
+
+    btn.disabled = false;
+    btn.textContent = t('tp_calc_route');
+}
+
+// ── Trip summary ────────────────────────────────────────────
+
+function tpUpdateSummary() {
+    const summary = document.getElementById('tpSummary');
+    summary.classList.remove('hidden');
+
+    document.getElementById('tpTotalDist').textContent = formatDistance(TRIP.totalDistKm);
+
+    const h = Math.floor(TRIP.totalDurationSec / 3600);
+    const m = Math.round((TRIP.totalDurationSec % 3600) / 60);
+    document.getElementById('tpTotalTime').textContent = h > 0 ? `${h}h ${m}m` : `${m} min`;
+}
+
+// ── Charge simulation along route ───────────────────────────
+
+function tpSimulateCharging() {
+    const plan = document.getElementById('tpChargePlan');
+    const list = document.getElementById('tpChargeList');
+    const stopsEl = document.getElementById('tpChargeStops');
+    const arrEl = document.getElementById('tpArrivalSoC');
+
+    if (!LIVE_DATA || !LIVE_DATA.battery_range) {
+        plan.classList.add('hidden');
+        stopsEl.textContent = '--';
+        arrEl.textContent = '--%';
+        return;
+    }
+
+    const rangeKm = LIVE_DATA.battery_range * 1.60934;
+    const currentSoC = LIVE_DATA.battery_level || 0;
+    const socPerKm = currentSoC / rangeKm;
+    const CHARGE_THRESHOLD = 15; // charge when SoC drops below 15%
+    const CHARGE_TARGET = 80;    // charge up to 80%
+
+    let soc = currentSoC;
+    let chargeStops = 0;
+    TRIP.chargeStops = [];
+
+    // Walk through each leg
+    let cumulativeKm = 0;
+    TRIP.legs.forEach((leg, i) => {
+        const legSocCost = leg.distKm * socPerKm;
+        const socAfterLeg = soc - legSocCost;
+
+        if (socAfterLeg < CHARGE_THRESHOLD && i < TRIP.legs.length) {
+            // Need to charge before/during this leg
+            chargeStops++;
+            TRIP.chargeStops.push({
+                afterLeg: i,
+                location: leg.fromName,
+                socBefore: Math.round(soc),
+                legDist: leg.distKm,
+                cumulativeKm
+            });
+            soc = CHARGE_TARGET; // simulate charging to 80%
+        }
+
+        soc = Math.max(0, soc - legSocCost);
+        cumulativeKm += leg.distKm;
+    });
+
+    const arrivalSoC = Math.max(0, Math.round(soc));
+    stopsEl.textContent = String(chargeStops);
+    arrEl.textContent = `${arrivalSoC}%`;
+    arrEl.style.color = arrivalSoC > 20 ? '#4ade80' : arrivalSoC > 10 ? '#f59e0b' : 'var(--c-red)';
+
+    if (TRIP.chargeStops.length) {
+        plan.classList.remove('hidden');
+        list.innerHTML = TRIP.chargeStops.map((s, i) => `
+            <div class="tp-charge-item">
+                <span class="tp-charge-num">#${i + 1}</span>
+                <span class="tp-charge-info">
+                    ${t('tp_charge_at')} <strong>${escapeHtml(s.location)}</strong>
+                    · ${formatDistance(s.cumulativeKm)} ${t('tp_into_trip')}
+                    · SoC: ${s.socBefore}% → ${CHARGE_TARGET}%
+                </span>
+            </div>`).join('');
+    } else {
+        plan.classList.add('hidden');
+    }
+}
+
+// ── Save / Load trips ───────────────────────────────────────
+
+function tpGetSavedTrips() {
+    return JSON.parse(localStorage.getItem('saved_trips') || '[]');
+}
+
+function tpSaveTrip() {
+    const name = document.getElementById('tpName').value.trim() || `Trip ${new Date().toLocaleDateString()}`;
+    const trips = tpGetSavedTrips();
+    trips.unshift({
+        id: Date.now(),
+        name,
+        waypoints: TRIP.waypoints.map(w => ({ lat: w.lat, lon: w.lon, name: w.name, address: w.address })),
+        createdAt: new Date().toISOString()
+    });
+    localStorage.setItem('saved_trips', JSON.stringify(trips.slice(0, 20)));
+    showToast(`${t('saved')} "${name}"`);
+}
+
+function tpShowLoadList() {
+    const trips = tpGetSavedTrips();
+    const listEl = document.getElementById('tpLoadList');
+    if (!trips.length) {
+        showToast(t('tp_no_saved'));
+        return;
+    }
+    listEl.classList.toggle('hidden');
+    listEl.innerHTML = trips.map(trip => `
+        <div class="tp-load-item" data-id="${trip.id}">
+            <div class="tp-load-name">${escapeHtml(trip.name)}</div>
+            <div class="tp-load-info">${trip.waypoints.length} stops · ${trip.createdAt.substring(0, 10)}</div>
+            <button class="tp-load-del" data-id="${trip.id}">✕</button>
+        </div>`).join('');
+
+    listEl.querySelectorAll('.tp-load-item').forEach(el => {
+        el.addEventListener('click', e => {
+            if (e.target.classList.contains('tp-load-del')) {
+                const trips = tpGetSavedTrips().filter(t => t.id !== parseInt(e.target.dataset.id));
+                localStorage.setItem('saved_trips', JSON.stringify(trips));
+                tpShowLoadList();
+                return;
+            }
+            const trip = trips.find(t => t.id === parseInt(el.dataset.id));
+            if (trip) tpLoadTrip(trip);
+            listEl.classList.add('hidden');
+        });
+    });
+}
+
+function tpLoadTrip(trip) {
+    TRIP.waypoints = trip.waypoints.map(w => ({ ...w, id: Date.now() + Math.random() * 1000 }));
+    document.getElementById('tpName').value = trip.name;
+    tpRenderWaypoints();
+    showToast(`${trip.name} loaded`);
+}
+
+function tpClearAll() {
+    TRIP.waypoints = [];
+    TRIP.legs = [];
+    TRIP.chargeStops = [];
+    TRIP.totalDistKm = 0;
+    TRIP.totalDurationSec = 0;
+    tpRenderWaypoints();
+    tpClearMapLayers();
+    document.getElementById('tpSummary').classList.add('hidden');
+    document.getElementById('tpChargePlan').classList.add('hidden');
+    document.getElementById('tpName').value = '';
+    document.getElementById('tpEmpty').classList.remove('hidden');
+}
+
+// ── Open in ABRP with full trip ─────────────────────────────
+
+function tpOpenInAbrp() {
+    if (TRIP.waypoints.length < 2) { showToast(t('tp_need_2_stops')); return; }
+    const params = new URLSearchParams();
+    // ABRP supports origin + destination + waypoints via URL
+    const origin = TRIP.waypoints[0];
+    const dest = TRIP.waypoints[TRIP.waypoints.length - 1];
+    params.set('origin_lat', origin.lat);
+    params.set('origin_lon', origin.lon);
+    params.set('destination', dest.name);
+    if (LIVE_DATA) {
+        params.set('soc_perc', LIVE_DATA.battery_level || '');
+        params.set('car_model', LIVE_DATA.car_type || 'tesla:m3:20:60:other');
+    }
+    // Add intermediate stops
+    const midpoints = TRIP.waypoints.slice(1, -1);
+    if (midpoints.length) {
+        params.set('via', midpoints.map(w => `${w.lat},${w.lon}`).join('|'));
+    }
+    window.open(`https://abetterrouteplanner.com/?${params.toString()}`, '_blank', 'noopener,noreferrer');
+}
+
+// ── GPS Follow mode ─────────────────────────────────────────
+
+let _gpsFollowing = false;
+let _gpsWatchId = null;
+
+function toggleGpsFollow() {
+    const btn = document.getElementById('mapFollowBtn');
+    _gpsFollowing = !_gpsFollowing;
+    btn.classList.toggle('map-ctrl-active', _gpsFollowing);
+
+    if (_gpsFollowing) {
+        _gpsWatchId = navigator.geolocation.watchPosition(pos => {
+            const { latitude: lat, longitude: lon } = pos.coords;
+            NAV.userLocation = { lat, lon };
+            if (NAV.map) {
+                NAV.map.setView([lat, lon], NAV.map.getZoom(), { animate: true });
+                if (NAV.userMarker) NAV.userMarker.setLatLng([lat, lon]);
+                else {
+                    NAV.userMarker = L.marker([lat, lon], { icon: userIcon() }).addTo(NAV.map);
+                }
+            }
+        }, () => {
+            _gpsFollowing = false;
+            btn.classList.remove('map-ctrl-active');
+        }, { enableHighAccuracy: true, maximumAge: 3000 });
+    } else {
+        if (_gpsWatchId != null) navigator.geolocation.clearWatch(_gpsWatchId);
+        _gpsWatchId = null;
+    }
+}
+
+// ── Fullscreen map ──────────────────────────────────────────
+
+function toggleFullscreenMap() {
+    const tile = document.getElementById('navigationTile');
+    tile.classList.toggle('nav-fullscreen');
+    document.body.classList.toggle('nav-fs-active');
+    setTimeout(() => NAV.map && NAV.map.invalidateSize(), 200);
+}
+
+// ── Map layer toggle ────────────────────────────────────────
+
+function cycleMapLayer() {
+    const order = ['street', 'satellite', 'terrain'];
+    const idx = order.indexOf(NAV.activeLayer);
+    const next = order[(idx + 1) % order.length];
+
+    NAV.map.removeLayer(NAV.layers[NAV.activeLayer]);
+    NAV.layers[next].addTo(NAV.map);
+    NAV.activeLayer = next;
+
+    const labels = { street: '🗺 Street', satellite: '🛰 Satellite', terrain: '⛰ Terrain' };
+    showToast(labels[next] || next);
+}
+
+// ── Dashboard fullscreen (for Tesla in-car browser) ──────────
+
+function toggleDashboardFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+        document.exitFullscreen().catch(() => {});
+    }
+}
+
+// ── Nearby amenities for chargers ────────────────────────────
+
+async function fetchAmenitiesNear(lat, lon, radiusM = 500) {
+    const query = `[out:json][timeout:8];
+(
+  node["amenity"~"restaurant|cafe|fast_food"](around:${radiusM},${lat},${lon});
+  node["shop"~"supermarket|convenience|mall"](around:${radiusM},${lat},${lon});
+  node["tourism"~"hotel|motel|guest_house|hostel"](around:${radiusM},${lat},${lon});
+);
+out tags 10;`;
+
+    const mirrors = [
+        'https://overpass.kumi.systems/api/interpreter',
+        'https://overpass-api.de/api/interpreter',
+        'https://overpass.openstreetmap.fr/api/interpreter'
+    ];
+
+    for (const mirror of mirrors) {
+        try {
+            const ac = new AbortController();
+            const timer = setTimeout(() => ac.abort(), 8000);
+            const resp = await fetch(mirror, {
+                method: 'POST',
+                body: `data=${encodeURIComponent(query)}`,
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                signal: ac.signal
+            });
+            clearTimeout(timer);
+            if (!resp.ok) continue;
+            const d = await resp.json();
+            const amenities = { food: [], shop: [], hotel: [] };
+            d.elements.forEach(el => {
+                const t = el.tags || {};
+                const name = t.name || '';
+                if (/restaurant|cafe|fast_food/.test(t.amenity)) amenities.food.push(name);
+                if (/supermarket|convenience|mall/.test(t.shop)) amenities.shop.push(name);
+                if (/hotel|motel|guest_house|hostel/.test(t.tourism)) amenities.hotel.push(name);
+            });
+            return amenities;
+        } catch { continue; }
+    }
+    return { food: [], shop: [], hotel: [] };
+}
+
+function renderAmenityTags(amenities) {
+    const tags = [];
+    if (amenities.food.length) tags.push(`<span class="amenity-tag amenity-food">🍽 ${amenities.food.length}</span>`);
+    if (amenities.shop.length) tags.push(`<span class="amenity-tag amenity-shop">🛒 ${amenities.shop.length}</span>`);
+    if (amenities.hotel.length) tags.push(`<span class="amenity-tag amenity-hotel">🏨 ${amenities.hotel.length}</span>`);
+    return tags.join(' ');
+}
+
+// Charger amenity filter state
+let _chargerAmenityFilter = 'all'; // 'all' | 'food' | 'shop' | 'hotel'
 
 // ── Custom Modal ───────────────────────────────────────────────
 
