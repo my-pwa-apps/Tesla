@@ -366,8 +366,19 @@
                                         </svg>
                                         <span id="destDistance">--</span>
                                     </span>
+                                    <span class="dest-stat arrival-soc hidden" id="arrivalSoC">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                                            <rect x="2" y="8" width="16" height="10" rx="2"/><path d="M22 11v4"/>
+                                        </svg>
+                                        <span id="arrivalPct">--%</span>
+                                    </span>
                                 </div>
-                                <button class="action-btn small" id="saveToFavBtn" data-i18n="nav_save_fav">Save to Favourites</button>
+                                <div class="dest-actions">
+                                    <button class="action-btn small" id="saveToFavBtn" data-i18n="nav_save_fav">Save to Favourites</button>
+                                    <button class="action-btn small dest-tesla-btn" id="sendToTeslaBtn" data-i18n="nav_send_tesla">Send to Tesla</button>
+                                    <button class="dest-mini-btn" id="setHomeBtn" title="Set as Home">🏠</button>
+                                    <button class="dest-mini-btn" id="setWorkBtn" title="Set as Work">🏢</button>
+                                </div>
                                 <div class="charge-rec hidden" id="chargeRec">
                                     <div class="charge-rec-header" data-i18n="charge_recommended">&#9889; Charging Recommended</div>
                                     <div class="charge-rec-body" id="chargeRecBody"></div>
@@ -377,6 +388,8 @@
                             <div class="nav-quick">
                                 <p class="nav-section-label" data-i18n="nav_quick">Quick</p>
                                 <div class="nav-quick-grid">
+                                    <button class="dest-btn nav-home-btn" id="navHomeBtn">🏠 Home</button>
+                                    <button class="dest-btn nav-work-btn" id="navWorkBtn">🏢 Work</button>
                                     <button class="dest-btn" data-dest="supercharger" data-i18n="nav_nearest_sc">Nearest Supercharger</button>
                                     <button class="dest-btn" data-dest="fastned" data-i18n="nav_nearest_fn">Nearest Fastned</button>
                                     <button class="dest-btn" data-dest="service" data-i18n="nav_service">Service Center</button>

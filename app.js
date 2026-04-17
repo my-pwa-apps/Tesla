@@ -762,8 +762,8 @@ function loadPerformance() {
         distEl.textContent = formatDistance(parseFloat(distEl.dataset.km));
     }
 
-    // Update trip data from live odometer
-    updateTripComputer(d);
+    // Update trip data from live odometer (skip for mock data)
+    if (LIVE_DATA) updateTripComputer(d);
 }
 
 // Show car's real GPS position on the nav map
@@ -833,6 +833,7 @@ function renderAllTiles() {
     updateControlsUI();
     loadPerformance();
     updateLastUpdated();
+    updateRangeRing();
 }
 
 // ── Charging Stations ──────────────────────────────────────────
@@ -946,13 +947,10 @@ async function navigateToCharger(lat, lon, name) {
     document.getElementById('navPaneSearch').classList.remove('hidden');
     await selectDestination({ lat, lon, name, address: name });
 
-    // Trigger battery preconditioning
-    if (AUTH.isLoggedIn()) {
-        const ok = await preconditionBattery();
-        showToast(ok ? `${name} · ${t('precond_started')}` : name);
-    } else {
-        showToast(name);
-    }
+    // Just show the route — do NOT auto-precondition.
+    // Preconditioning heats the battery/cabin and should only happen
+    // when the user explicitly taps "Precondition" in Car Controls.
+    showToast(name);
 }
 
 async function findChargers() {
@@ -1063,6 +1061,8 @@ function initNavMap() {
             NAV.userMarker = L.marker([lat, lng], { icon: userIcon() })
                 .addTo(NAV.map)
                 .bindTooltip(t('you_are_here'), { direction: 'top', offset: [0, -8] });
+            // Show range ring once we have location
+            updateRangeRing();
         }, () => {});
     }
 
@@ -1161,6 +1161,9 @@ async function fetchRoute(from, to) {
         document.getElementById('destDuration').textContent = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
         document.getElementById('destDistance').textContent = formatDistance(distKm);
 
+        // Arrival SoC estimation
+        updateArrivalSoC(distKm);
+
         recommendChargerForRoute(to, distKm);
 
         if (NAV.routeLayer) NAV.map.removeLayer(NAV.routeLayer);
@@ -1176,18 +1179,138 @@ function openInApp(app) {
 
     if (dest) {
         const enc = encodeURIComponent(dest.name);
+        // ABRP deep link with real vehicle data when available
+        const abrpParams = new URLSearchParams({ destination: enc });
+        if (LIVE_DATA) {
+            abrpParams.set('soc_perc', LIVE_DATA.battery_level || '');
+            abrpParams.set('car_model', LIVE_DATA.car_type || 'tesla:m3:20:60:other');
+            if (NAV.userLocation) {
+                abrpParams.set('origin_lat', NAV.userLocation.lat);
+                abrpParams.set('origin_lon', NAV.userLocation.lon);
+            }
+        }
         url = {
             google: `https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lon}`,
             waze  : `https://waze.com/ul?ll=${dest.lat},${dest.lon}&navigate=yes`,
             here  : `https://share.here.com/r/${dest.lat},${dest.lon},${enc}`,
-            abrp  : `https://abetterrouteplanner.com/?destination=${enc}`
+            abrp  : `https://abetterrouteplanner.com/?${abrpParams.toString()}`
         }[app];
     } else {
         url = { google:'https://maps.google.com', waze:'https://waze.com',
                 here:'https://wego.here.com', abrp:'https://abetterrouteplanner.com' }[app];
     }
 
-    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        // Start preconditioning when user actually launches navigation with a destination
+        if (dest && AUTH.isLoggedIn()) {
+            preconditionBattery().then(ok => {
+                if (ok) showToast(t('precond_started'));
+            });
+        }
+    }
+}
+
+// ── Send destination to Tesla in-car nav ─────────────────────
+
+async function sendToTesla() {
+    const dest = NAV.currentDest;
+    if (!dest) return;
+    if (!AUTH.isLoggedIn()) { showToast(t('connect_first')); return; }
+    const res = await sendCarCommand('navigation_request', {
+        type: 'share_ext_content_raw',
+        value: { 'android.intent.extra.TEXT': `${dest.name} ${dest.lat},${dest.lon}` },
+        locale: 'en-US',
+        timestamp_ms: Date.now().toString()
+    });
+    showToast(res.ok ? t('sent_to_tesla') : (res.error || t('cmd_failed')));
+}
+
+// ── Arrival SoC estimation ─────────────────────────────────
+
+function updateArrivalSoC(routeDistKm) {
+    const el = document.getElementById('arrivalSoC');
+    if (!el) return;
+
+    if (!LIVE_DATA || !LIVE_DATA.battery_range) {
+        el.classList.add('hidden');
+        return;
+    }
+
+    const rangeKm = LIVE_DATA.battery_range * 1.60934;
+    const currentSoC = LIVE_DATA.battery_level || 0;
+    // Proportional: if range covers X km at current SoC, how much SoC for this trip?
+    const socPerKm = currentSoC / rangeKm;
+    const tripSoC = Math.round(routeDistKm * socPerKm);
+    const arrivalPct = Math.max(0, currentSoC - tripSoC);
+
+    el.classList.remove('hidden');
+    const arrivalEl = document.getElementById('arrivalPct');
+    if (arrivalEl) {
+        arrivalEl.textContent = `${arrivalPct}%`;
+        arrivalEl.style.color = arrivalPct > 20 ? '#4ade80' : arrivalPct > 10 ? '#f59e0b' : 'var(--c-red)';
+    }
+}
+
+// ── Range ring on map ─────────────────────────────────────
+
+function updateRangeRing() {
+    if (!NAV.map) return;
+    // Remove old ring
+    if (NAV.rangeRing) { NAV.map.removeLayer(NAV.rangeRing); NAV.rangeRing = null; }
+
+    const loc = NAV.userLocation;
+    if (!loc || !LIVE_DATA || !LIVE_DATA.battery_range) return;
+
+    const rangeKm = LIVE_DATA.battery_range * 1.60934;
+    // Apply 85% efficiency factor for real-world range
+    const realRangeM = rangeKm * 0.85 * 1000;
+
+    NAV.rangeRing = L.circle([loc.lat, loc.lon], {
+        radius: realRangeM,
+        color: 'rgba(74, 222, 128, 0.3)',
+        fillColor: 'rgba(74, 222, 128, 0.05)',
+        fillOpacity: 1,
+        weight: 1.5,
+        dashArray: '6 4',
+        interactive: false
+    }).addTo(NAV.map);
+}
+
+// ── Home / Work shortcuts ─────────────────────────────────
+
+function getHomeLocation() { return JSON.parse(localStorage.getItem('nav_home') || 'null'); }
+function getWorkLocation() { return JSON.parse(localStorage.getItem('nav_work') || 'null'); }
+
+function setHomeLocation() {
+    const dest = NAV.currentDest;
+    if (!dest) { showToast(t('no_results')); return; }
+    localStorage.setItem('nav_home', JSON.stringify(dest));
+    showToast(`🏠 ${t('saved')}`);
+    updateHomeWorkButtons();
+}
+
+function setWorkLocation() {
+    const dest = NAV.currentDest;
+    if (!dest) { showToast(t('no_results')); return; }
+    localStorage.setItem('nav_work', JSON.stringify(dest));
+    showToast(`🏢 ${t('saved')}`);
+    updateHomeWorkButtons();
+}
+
+function updateHomeWorkButtons() {
+    const homeBtn = document.getElementById('navHomeBtn');
+    const workBtn = document.getElementById('navWorkBtn');
+    const home = getHomeLocation();
+    const work = getWorkLocation();
+    if (homeBtn) {
+        homeBtn.textContent = home ? `🏠 ${home.name}` : `🏠 ${t('nav_set_home')}`;
+        homeBtn.dataset.hasLocation = home ? '1' : '0';
+    }
+    if (workBtn) {
+        workBtn.textContent = work ? `🏢 ${work.name}` : `🏢 ${t('nav_set_work')}`;
+        workBtn.dataset.hasLocation = work ? '1' : '0';
+    }
 }
 
 // ── Saved / Recent ────────────────────────────────────────────
@@ -1323,8 +1446,33 @@ function setupNavigation() {
     document.querySelectorAll('.dest-btn').forEach(btn =>
         btn.addEventListener('click', () => handleQuickDestination(btn.dataset.dest)));
 
+    // Send to Tesla button
+    const sendToTeslaBtn = document.getElementById('sendToTeslaBtn');
+    if (sendToTeslaBtn) sendToTeslaBtn.addEventListener('click', sendToTesla);
+
+    // Set Home / Set Work buttons
+    const setHomeBtn = document.getElementById('setHomeBtn');
+    const setWorkBtn = document.getElementById('setWorkBtn');
+    if (setHomeBtn) setHomeBtn.addEventListener('click', setHomeLocation);
+    if (setWorkBtn) setWorkBtn.addEventListener('click', setWorkLocation);
+
+    // Home / Work quick-nav
+    const homeBtn = document.getElementById('navHomeBtn');
+    const workBtn = document.getElementById('navWorkBtn');
+    if (homeBtn) homeBtn.addEventListener('click', () => {
+        const home = getHomeLocation();
+        if (home) selectDestinationAndSwitch(home);
+        else showToast(t('nav_set_home_hint'));
+    });
+    if (workBtn) workBtn.addEventListener('click', () => {
+        const work = getWorkLocation();
+        if (work) selectDestinationAndSwitch(work);
+        else showToast(t('nav_set_work_hint'));
+    });
+
     renderSaved();
     renderRecent();
+    updateHomeWorkButtons();
     setTimeout(initNavMap, 150);
 }
 
@@ -1777,7 +1925,7 @@ function showVehiclePicker(vehicles) {
 // ── Trip Computer ─────────────────────────────────────────────
 
 function updateTripComputer(d) {
-    if (!d || d.odometer == null) return;
+    if (!d || d.odometer == null || !LIVE_DATA) return;
     const odoKm = d.odometer * 1.60934; // API returns miles
     const startOdo = parseFloat(localStorage.getItem('trip_start_odo') || '0');
     const startBat = parseFloat(localStorage.getItem('trip_start_bat') || '0');
@@ -1812,6 +1960,7 @@ function updateTripComputer(d) {
 }
 
 function resetTrip() {
+    if (!LIVE_DATA) { showToast(t('connect_first')); return; }
     const d = getTeslaData();
     if (d.odometer != null) {
         const odoKm = d.odometer * 1.60934;

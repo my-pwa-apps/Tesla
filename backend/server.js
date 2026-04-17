@@ -265,7 +265,8 @@ app.post('/api/vehicles/:id/command', commandLimiter, async (req, res) => {
         'charge_start', 'charge_stop',
         'flash_lights', 'honk_horn',
         'set_sentry_mode', 'schedule_software_update',
-        'actuate_trunk', 'set_preconditioning_max'
+        'actuate_trunk', 'set_preconditioning_max',
+        'navigation_request'
     ]);
     if (!ALLOWED_COMMANDS.has(command)) {
         return res.status(400).json({ error: 'Unknown command' });
