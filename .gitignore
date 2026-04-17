@@ -19,6 +19,10 @@ functions/.runtimeconfig.json
 backend/node_modules/
 backend/.env
 
+# Worker
+worker/node_modules/
+worker/.wrangler/
+
 # Logs
 *.log
 npm-debug.log*

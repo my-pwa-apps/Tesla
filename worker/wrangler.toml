@@ -1,0 +1,11 @@
+name = "tesla-dashboard"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+# Non-secret config — secrets are set via `wrangler secret put`
+FLEET_API_BASE = "https://fleet-api.prd.eu.vn.cloud.tesla.com/api/1"
+TOKEN_URL = "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
+
+# Set these via: wrangler secret put TESLA_CLIENT_ID
+#                wrangler secret put TESLA_CLIENT_SECRET

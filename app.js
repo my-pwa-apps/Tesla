@@ -56,11 +56,13 @@ function requireConfirmTap(btn, callback) {
 
 // ── Configuration ────────────────────────────────────────────
 
+// Backend URL — set to your Cloudflare Worker or Vercel deployment
 const BACKEND_URL = (() => {
     const h = window.location.hostname;
-    return (h === 'localhost' || h === '127.0.0.1')
-        ? 'http://localhost:3000'
-        : 'https://bart-gilt-delta.vercel.app';
+    if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3000';
+    // Cloudflare Worker (primary)
+    return 'https://tesla-dashboard.garfieldapp.workers.dev';
+    // Vercel fallback: 'https://bart-gilt-delta.vercel.app'
 })();
 
 // Detect Tesla in-car browser (Chromium-based, contains 'Tesla' in UA)
@@ -198,12 +200,12 @@ async function initOAuth() {
         const r = await fetch(`${BACKEND_URL}/api/config`);
         const d = await r.json();
         TESLA_OAUTH.clientId   = d.clientId;
-        // Always redirect to the Vercel-hosted callback (stable, registered URL)
-        // For local dev fall back to the local backend callback
+        // Callback URL must be a registered redirect URI at developer.tesla.com
+        // The callback page is served from the frontend host (GitHub Pages or Vercel static)
         const h = window.location.hostname;
         TESLA_OAUTH.redirectUri = (h === 'localhost' || h === '127.0.0.1')
             ? 'http://localhost:3000/callback.html'
-            : 'https://bart-gilt-delta.vercel.app/callback.html';
+            : `${window.location.origin}/callback.html`;
     } catch { /* backend unavailable */ }
 }
 
@@ -860,11 +862,12 @@ async function fetchNearbyChargers(lat, lon, radiusKm = 25) {
 );
 out center tags;`;
 
-    // Try backend proxy first (no CORS issues), then direct fallback
+    // Try direct mirrors first, backend proxy as last resort
+    // (proxy needs Vercel deploy; direct works immediately)
     const mirrors = [
-        `${BACKEND_URL}/api/overpass`,
         'https://overpass-api.de/api/interpreter',
-        'https://overpass.openstreetmap.fr/api/interpreter'
+        'https://overpass.openstreetmap.fr/api/interpreter',
+        `${BACKEND_URL}/api/overpass`
     ];
 
     for (const mirror of mirrors) {
@@ -1010,12 +1013,16 @@ async function findChargers() {
         stations.forEach(s => { s.dist = haversineKm(lat, lon, s.lat, s.lon); });
         stations.sort(chargerSortPreferFastned);
 
-        // Fetch amenities for top 12 chargers in parallel
+        // Fetch amenities for top 5 chargers sequentially (avoids Overpass 429)
         const top12 = stations.slice(0, 12);
-        const amenityResults = await Promise.all(
-            top12.map(s => fetchAmenitiesNear(s.lat, s.lon, 500).catch(() => ({ food: [], shop: [], hotel: [] })))
-        );
-        top12.forEach((s, i) => { s.amenities = amenityResults[i]; });
+        const top5 = top12.slice(0, 5);
+        for (let i = 0; i < top5.length; i++) {
+            if (i > 0) await new Promise(r => setTimeout(r, 1500)); // 1.5s between requests
+            top5[i].amenities = await fetchAmenitiesNear(top5[i].lat, top5[i].lon, 500)
+                .catch(() => ({ food: [], shop: [], hotel: [] }));
+        }
+        // Remaining chargers get no amenity data
+        top12.slice(5).forEach(s => { s.amenities = { food: [], shop: [], hotel: [] }; });
 
         // Store for filtering
         NAV._lastChargers = top12;
@@ -1953,13 +1960,14 @@ async function recommendChargerForRoute(dest, routeDistanceKm, routeGeometry) {
         ? [samplePoints[0], ...samplePoints.filter((_, i) => i > 0 && i < samplePoints.length - 1).slice(0, 2), samplePoints[samplePoints.length - 1]]
         : samplePoints;
 
-    // Search for chargers near each sample point
+    // Search for chargers near each sample point (sequential to avoid 429)
     let stations = [];
     try {
-        const results = await Promise.all(
-            samples.map(p => fetchNearbyChargers(p.lat, p.lon, 10).catch(() => []))
-        );
-        stations = results.flat();
+        for (let i = 0; i < samples.length; i++) {
+            if (i > 0) await new Promise(r => setTimeout(r, 1200));
+            const result = await fetchNearbyChargers(samples[i].lat, samples[i].lon, 10).catch(() => []);
+            stations.push(...result);
+        }
     } catch { card.classList.add('hidden'); return; }
 
     // Filter: only chargers within 5 km of the actual route
@@ -2510,9 +2518,9 @@ async function fetchAmenitiesNear(lat, lon, radiusM = 500) {
 out tags 10;`;
 
     const mirrors = [
-        `${BACKEND_URL}/api/overpass`,
         'https://overpass-api.de/api/interpreter',
-        'https://overpass.openstreetmap.fr/api/interpreter'
+        'https://overpass.openstreetmap.fr/api/interpreter',
+        `${BACKEND_URL}/api/overpass`
     ];
 
     for (const mirror of mirrors) {
