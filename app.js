@@ -850,26 +850,52 @@ function haversineKm(lat1, lon1, lat2, lon2) {
 
 async function fetchNearbyChargers(lat, lon, radiusKm = 25) {
     const r = radiusKm * 1000;
-    const query = `[out:json][timeout:20];
+    const query = `[out:json][timeout:15];
 (
   node["amenity"="charging_station"](around:${r},${lat},${lon});
   way["amenity"="charging_station"](around:${r},${lat},${lon});
 );
 out center tags;`;
-    const resp = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: query });
-    const d = await resp.json();
-    return d.elements.map(el => {
-        const t = el.tags || {};
-        const network  = t.network  || t.operator || t.brand || '';
-        const name     = t.name     || t.operator || t.brand || t.network || 'Charging Station';
-        return {
-            lat    : el.lat ?? el.center?.lat,
-            lon    : el.lon ?? el.center?.lon,
-            name,
-            network,
-            sockets: t.capacity || t['charging:count'] || null
-        };
-    }).filter(s => s.lat && s.lon);
+
+    // Try multiple Overpass mirrors — the primary often times out
+    const mirrors = [
+        'https://overpass.kumi.systems/api/interpreter',
+        'https://overpass-api.de/api/interpreter',
+        'https://overpass.openstreetmap.fr/api/interpreter'
+    ];
+
+    for (const mirror of mirrors) {
+        try {
+            const ac = new AbortController();
+            const timer = setTimeout(() => ac.abort(), 12000);
+            const resp = await fetch(mirror, {
+                method: 'POST',
+                body: `data=${encodeURIComponent(query)}`,
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                signal: ac.signal
+            });
+            clearTimeout(timer);
+            if (!resp.ok) continue;
+            const d = await resp.json();
+            return d.elements.map(el => {
+                const t = el.tags || {};
+                const network  = t.network  || t.operator || t.brand || '';
+                const name     = t.name     || t.operator || t.brand || t.network || 'Charging Station';
+                return {
+                    lat    : el.lat ?? el.center?.lat,
+                    lon    : el.lon ?? el.center?.lon,
+                    name,
+                    network,
+                    sockets: t.capacity || t['charging:count'] || null
+                };
+            }).filter(s => s.lat && s.lon);
+        } catch {
+            // Try next mirror
+            continue;
+        }
+    }
+    // All mirrors failed
+    throw new Error('All Overpass mirrors timed out');
 }
 
 // Commands that change vehicle state and warrant a data re-fetch
