@@ -9,3 +9,9 @@ TOKEN_URL = "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
 
 # Set these via: wrangler secret put TESLA_CLIENT_ID
 #                wrangler secret put TESLA_CLIENT_SECRET
+#                wrangler secret put GOOGLE_LINK_PASSWORD   (password to link Google to your Tesla)
+#                wrangler secret put SETUP_PASSWORD         (password for /setup endpoint)
+
+[[kv_namespaces]]
+binding = "TOKENS"
+id = "a18f306e090d4ca08f05cf094c644a1c"

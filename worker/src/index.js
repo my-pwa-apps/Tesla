@@ -3,6 +3,14 @@
 //  Port of Express backend/server.js to Workers runtime
 // ============================================================
 
+import {
+    handleFulfillment,
+    handleGoogleAuthorize,
+    handleGoogleToken,
+    handleSetup,
+    verifyGoogleBearer
+} from './google-home.js';
+
 const ALLOWED_ORIGINS = [
     'https://my-pwa-apps.github.io',
     'http://localhost:5500',
@@ -126,6 +134,18 @@ export default {
         }
 
         try {
+            // ── Google Smart Home routes (no CORS/JSON wrapper) ──
+            if (path === '/google/authorize') return handleGoogleAuthorize(request, env);
+            if (path === '/google/token') return handleGoogleToken(request, env);
+            if (path === '/google/fulfillment') {
+                if (!(await verifyGoogleBearer(request, env))) {
+                    return new Response(JSON.stringify({ error: 'unauthorized' }),
+                        { status: 401, headers: { 'Content-Type': 'application/json' } });
+                }
+                return handleFulfillment(request, env);
+            }
+            if (path === '/setup') return handleSetup(request, env);
+
             // ── GET /api/config ──
             if (method === 'GET' && path === '/api/config') {
                 if (!env.TESLA_CLIENT_ID) return json({ error: 'Client ID not configured' }, 500, origin);
