@@ -1980,7 +1980,6 @@ const TRIP = {
 function tpAddWaypoint(dest) {
     TRIP.waypoints.push({ ...dest, id: Date.now() });
     tpRenderWaypoints();
-    document.getElementById('tpEmpty').classList.add('hidden');
 }
 
 function tpRemoveWaypoint(id) {
