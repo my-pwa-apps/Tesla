@@ -491,6 +491,18 @@ function updateTime() {
         hour12: use12h
     });
 }
+let _clockInterval = null;
+function startClock() {
+    if (_clockInterval) return;
+    updateTime();
+    _clockInterval = setInterval(updateTime, 1000);
+}
+function stopClock() {
+    if (_clockInterval) { clearInterval(_clockInterval); _clockInterval = null; }
+}
+document.addEventListener('visibilitychange', () => {
+    document.hidden ? stopClock() : startClock();
+});
 startClock();
 
 // ── Weather ────────────────────────────────────────────────────
@@ -1840,21 +1852,6 @@ function updateLastUpdated() {
     const timeStr = ago < 1 ? t('just_now') : t('minutes_ago', { min: ago });
     el.textContent = t('last_updated', { time: timeStr });
 }
-
-// ── Visibility-based clock optimization ─────────────────────
-
-let _clockInterval = null;
-function startClock() {
-    if (_clockInterval) return;
-    updateTime();
-    _clockInterval = setInterval(updateTime, 1000);
-}
-function stopClock() {
-    if (_clockInterval) { clearInterval(_clockInterval); _clockInterval = null; }
-}
-document.addEventListener('visibilitychange', () => {
-    document.hidden ? stopClock() : startClock();
-});
 
 // ── Remove auto temperature option ─────────────────────────
 // "Auto" was listed in Settings but never implemented.
