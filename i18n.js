@@ -135,6 +135,8 @@ const TRANSLATIONS = {
         nav_set_work       : 'Set Work',
         nav_set_home_hint  : 'Search a destination first, then tap 🏠 to set as Home',
         nav_set_work_hint  : 'Search a destination first, then tap 🏢 to set as Work',
+        nav_start          : 'Start Navigation',
+        nav_starting       : 'Starting navigation…',
         // Trip planner
         nav_trip_tab       : 'Trip Planner',
         tp_name_placeholder: 'Trip name…',
@@ -154,6 +156,7 @@ const TRANSLATIONS = {
         tp_no_saved        : 'No saved trips',
         tp_charge_at       : 'Charge near',
         tp_into_trip       : 'into trip',
+        tp_detour          : 'off route',
         // Charger amenities
         filter_all         : 'All',
         no_chargers_filter : 'No chargers match this filter',

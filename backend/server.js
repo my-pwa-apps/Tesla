@@ -301,6 +301,44 @@ app.get('/api/vehicles/:id/nearby_charging_sites', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// OVERPASS PROXY (avoids CORS issues with Overpass mirrors)
+// ─────────────────────────────────────────────────────────────────────────────
+const overpassLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    message: { error: 'Too many Overpass requests' }
+});
+
+app.post('/api/overpass', overpassLimiter, async (req, res) => {
+    const { data } = req.body || {};
+    if (!data || typeof data !== 'string' || data.length > 2000) {
+        return res.status(400).json({ error: 'Invalid query' });
+    }
+    const mirrors = [
+        'https://overpass.kumi.systems/api/interpreter',
+        'https://overpass-api.de/api/interpreter',
+        'https://overpass.openstreetmap.fr/api/interpreter'
+    ];
+    for (const mirror of mirrors) {
+        try {
+            const ac = new AbortController();
+            const timer = setTimeout(() => ac.abort(), 15000);
+            const r = await fetch(mirror, {
+                method: 'POST',
+                body: `data=${encodeURIComponent(data)}`,
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                signal: ac.signal
+            });
+            clearTimeout(timer);
+            if (!r.ok) continue;
+            const json = await r.json();
+            return res.json(json);
+        } catch { continue; }
+    }
+    res.status(502).json({ error: 'All Overpass mirrors failed' });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // START
 // ─────────────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;

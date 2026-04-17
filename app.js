@@ -63,6 +63,9 @@ const BACKEND_URL = (() => {
         : 'https://bart-gilt-delta.vercel.app';
 })();
 
+// Detect Tesla in-car browser (Chromium-based, contains 'Tesla' in UA)
+const IS_TESLA_BROWSER = /Tesla/i.test(navigator.userAgent);
+
 const TESLA_OAUTH = {
     authUrl        : 'https://auth.tesla.com/oauth2/v3/authorize',
     clientId       : null,   // loaded from backend /api/config
@@ -857,9 +860,9 @@ async function fetchNearbyChargers(lat, lon, radiusKm = 25) {
 );
 out center tags;`;
 
-    // Try multiple Overpass mirrors — the primary often times out
+    // Try backend proxy first (no CORS issues), then direct fallback
     const mirrors = [
-        'https://overpass.kumi.systems/api/interpreter',
+        `${BACKEND_URL}/api/overpass`,
         'https://overpass-api.de/api/interpreter',
         'https://overpass.openstreetmap.fr/api/interpreter'
     ];
@@ -868,10 +871,11 @@ out center tags;`;
         try {
             const ac = new AbortController();
             const timer = setTimeout(() => ac.abort(), 12000);
+            const isProxy = mirror.includes('/api/overpass');
             const resp = await fetch(mirror, {
                 method: 'POST',
-                body: `data=${encodeURIComponent(query)}`,
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: isProxy ? JSON.stringify({ data: query }) : `data=${encodeURIComponent(query)}`,
+                headers: { 'Content-Type': isProxy ? 'application/json' : 'application/x-www-form-urlencoded' },
                 signal: ac.signal
             });
             clearTimeout(timer);
@@ -1257,7 +1261,7 @@ async function fetchRoute(from, to) {
         // Arrival SoC estimation
         updateArrivalSoC(distKm);
 
-        recommendChargerForRoute(to, distKm);
+        recommendChargerForRoute(to, distKm, route.geometry);
 
         if (NAV.routeLayer) NAV.map.removeLayer(NAV.routeLayer);
         NAV.routeLayer = L.geoJSON(route.geometry, {
@@ -1309,6 +1313,17 @@ function openInApp(app) {
 async function sendToTesla() {
     const dest = NAV.currentDest;
     if (!dest) return;
+
+    // In-car: open directly in Tesla nav via deep link
+    if (IS_TESLA_BROWSER) {
+        window.open(`https://www.google.com/maps/dir/?api=1&destination=${dest.lat},${dest.lon}`, '_blank');
+        showToast(t('nav_starting'));
+        // Precondition battery for charging stop
+        if (AUTH.isLoggedIn()) preconditionBattery();
+        return;
+    }
+
+    // Outside car: send to car via Fleet API
     if (!AUTH.isLoggedIn()) { showToast(t('connect_first')); return; }
     const res = await sendCarCommand('navigation_request', {
         type: 'share_ext_content_raw',
@@ -1317,6 +1332,14 @@ async function sendToTesla() {
         timestamp_ms: Date.now().toString()
     });
     showToast(res.ok ? t('sent_to_tesla') : (res.error || t('cmd_failed')));
+}
+
+// Update all Send/Start tesla buttons based on in-car vs remote
+function updateTeslaNavButtons() {
+    const label = IS_TESLA_BROWSER ? t('nav_start') : t('nav_send_tesla');
+    document.querySelectorAll('[data-i18n=\"nav_send_tesla\"]').forEach(el => {
+        el.textContent = label;
+    });
 }
 
 // ── Arrival SoC estimation ─────────────────────────────────
@@ -1888,7 +1911,7 @@ function setupChargerPrefs() {
 
 // ── Smart Charger Route Recommendation ────────────────────────
 
-async function recommendChargerForRoute(dest, routeDistanceKm) {
+async function recommendChargerForRoute(dest, routeDistanceKm, routeGeometry) {
     const card = document.getElementById('chargeRec');
     const body = document.getElementById('chargeRecBody');
     if (!card || !body) return;
@@ -1902,36 +1925,72 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
         return;
     }
 
-    let userLat, userLon;
-    try {
-        const pos = await new Promise((res, rej) =>
-            navigator.geolocation.getCurrentPosition(res, rej, { timeout: 6000 })
-        );
-        userLat = pos.coords.latitude;
-        userLon = pos.coords.longitude;
-    } catch { card.classList.add('hidden'); return; }
+    if (!routeGeometry || !routeGeometry.coordinates || !routeGeometry.coordinates.length) {
+        card.classList.add('hidden');
+        return;
+    }
 
-    const midLat = (userLat + dest.lat) / 2;
-    const midLon = (userLon + dest.lon) / 2;
+    // Sample points along the actual route every ~80 km
+    const coords = routeGeometry.coordinates; // [lon, lat] pairs
+    const sampleEveryKm = 80;
+    const samplePoints = [];
+    let accDist = 0;
+    let lastSampled = 0;
+    samplePoints.push({ lat: coords[0][1], lon: coords[0][0] });
+    for (let i = 1; i < coords.length; i++) {
+        accDist += haversineKm(coords[i-1][1], coords[i-1][0], coords[i][1], coords[i][0]);
+        if (accDist - lastSampled >= sampleEveryKm) {
+            samplePoints.push({ lat: coords[i][1], lon: coords[i][0] });
+            lastSampled = accDist;
+        }
+    }
+    // Always include a point near the end
+    const lastCoord = coords[coords.length - 1];
+    samplePoints.push({ lat: lastCoord[1], lon: lastCoord[0] });
 
+    // Limit to 4 sample points max to avoid too many API calls
+    const samples = samplePoints.length > 4
+        ? [samplePoints[0], ...samplePoints.filter((_, i) => i > 0 && i < samplePoints.length - 1).slice(0, 2), samplePoints[samplePoints.length - 1]]
+        : samplePoints;
+
+    // Search for chargers near each sample point
     let stations = [];
     try {
-        const [mid, near] = await Promise.all([
-            fetchNearbyChargers(midLat, midLon, 25),
-            fetchNearbyChargers(dest.lat, dest.lon, 20)
-        ]);
-        stations = [...mid, ...near];
+        const results = await Promise.all(
+            samples.map(p => fetchNearbyChargers(p.lat, p.lon, 10).catch(() => []))
+        );
+        stations = results.flat();
     } catch { card.classList.add('hidden'); return; }
+
+    // Filter: only chargers within 5 km of the actual route
+    const MAX_DETOUR_KM = 5;
+    const routeCoords = coords; // [lon, lat]
+    // Sample route at coarser intervals for distance checks (every 20th coord)
+    const routeSamples = routeCoords.filter((_, i) => i % 20 === 0 || i === routeCoords.length - 1);
+
+    function minDistToRoute(sLat, sLon) {
+        let minD = Infinity;
+        for (const c of routeSamples) {
+            const d = haversineKm(sLat, sLon, c[1], c[0]);
+            if (d < minD) minD = d;
+        }
+        return minD;
+    }
 
     const seen = new Set();
     const filtered = stations.filter(s => {
         const key = `${s.lat.toFixed(4)},${s.lon.toFixed(4)}`;
         if (seen.has(key)) return false;
         seen.add(key);
-        return matchesPref(s.network);
+        if (!matchesPref(s.network)) return false;
+        s.detourKm = minDistToRoute(s.lat, s.lon);
+        return s.detourKm <= MAX_DETOUR_KM;
     });
 
-    filtered.forEach(s => { s.dist = haversineKm(userLat, userLon, s.lat, s.lon); });
+    const userLoc = NAV.userLocation;
+    if (userLoc) {
+        filtered.forEach(s => { s.dist = haversineKm(userLoc.lat, userLoc.lon, s.lat, s.lon); });
+    }
     filtered.sort(chargerSortPreferFastned);
 
     const top = filtered.slice(0, 3);
@@ -1942,13 +2001,14 @@ async function recommendChargerForRoute(dest, routeDistanceKm) {
 
     top.forEach(s => {
         const { cls: badgeClass, label: badgeLabel } = chargerBadge(s.network);
+        const detourNote = s.detourKm > 0.5 ? ` · ${s.detourKm.toFixed(1)} km ${t('tp_detour')}` : '';
 
         const el = document.createElement('div');
         el.className = 'rec-item';
         el.innerHTML = `
             <div class="rec-item-header">
                 <span class="charger-badge ${badgeClass}">${escapeHtml(badgeLabel)}</span>
-                <span class="charger-dist">${formatDistance(s.dist)}</span>
+                <span class="charger-dist">${formatDistance(s.dist || 0)}${detourNote}</span>
             </div>
             <div class="rec-item-name">${escapeHtml(s.name)}</div>
         `;
@@ -2450,7 +2510,7 @@ async function fetchAmenitiesNear(lat, lon, radiusM = 500) {
 out tags 10;`;
 
     const mirrors = [
-        'https://overpass.kumi.systems/api/interpreter',
+        `${BACKEND_URL}/api/overpass`,
         'https://overpass-api.de/api/interpreter',
         'https://overpass.openstreetmap.fr/api/interpreter'
     ];
@@ -2459,10 +2519,11 @@ out tags 10;`;
         try {
             const ac = new AbortController();
             const timer = setTimeout(() => ac.abort(), 8000);
+            const isProxy = mirror.includes('/api/overpass');
             const resp = await fetch(mirror, {
                 method: 'POST',
-                body: `data=${encodeURIComponent(query)}`,
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: isProxy ? JSON.stringify({ data: query }) : `data=${encodeURIComponent(query)}`,
+                headers: { 'Content-Type': isProxy ? 'application/json' : 'application/x-www-form-urlencoded' },
                 signal: ac.signal
             });
             clearTimeout(timer);
@@ -2682,6 +2743,7 @@ async function init() {
     setupControls();
     setupChargerPrefs();
     setupOfflineIndicator();
+    updateTeslaNavButtons();
 
     // Wire trip reset button
     const resetTripBtn = document.getElementById('resetTripBtn');
